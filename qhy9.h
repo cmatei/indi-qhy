@@ -40,6 +40,8 @@ public:
 
 	const char *getDefaultName() { return "QHY9"; }
 
+	const char *deviceName() { return getDefaultName(); }
+
 	void initCamera();
 
 	bool initProperties();
@@ -55,6 +57,7 @@ public:
 	bool SetFilterNames();
 	bool SelectFilter(int i);
 	int  QueryFilter();
+//	bool GetFilterNames(const char *group);
 
 protected:
 

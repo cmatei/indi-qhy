@@ -42,7 +42,7 @@ bool QHY9::initProperties()
 			   "READOUT_SPEED", "Readout Speed",
 			   IMAGE_SETTINGS_TAB, IP_WO, ISR_1OFMANY, 0, IPS_IDLE);
 
-	GetFilterNames(deviceName(), FILTER_TAB);
+	GetFilterNames(FILTER_TAB);
 
 	return true;
 }
@@ -436,7 +436,7 @@ void QHY9::abortVideo()
 
 void QHY9::setShutter(int mode)
 {
-	uint8_t buffer[1] = { mode };
+	uint8_t buffer[1] = { (uint8_t) mode };
 
 	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
 				QHY9_SHUTTER_CMD, 0, 0, buffer, 1, 0);

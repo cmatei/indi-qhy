@@ -110,7 +110,7 @@ void QHYCCD::TimerHit()
 	SetTimer(QHYCCD_TIMER);
 }
 
-bool QHYCCD::GetFilterNames(const char *deviceName, const char *groupName)
+bool QHYCCD::GetFilterNames(const char *groupName)
 {
 	char filterName[MAXINDINAME];
 	char filterLabel[MAXINDILABEL];
@@ -127,7 +127,7 @@ bool QHYCCD::GetFilterNames(const char *deviceName, const char *groupName)
 		IUFillText(&FilterNameT[i], filterName, filterLabel, filterDesignation[i].c_str());
 	}
 
-	IUFillTextVector(FilterNameTP, FilterNameT, MaxFilter, deviceName, "FILTER_NAME", "Filter", groupName, IP_RW, 1, IPS_IDLE);
+	IUFillTextVector(FilterNameTP, FilterNameT, MaxFilter, deviceName(), "FILTER_NAME", "Filter", groupName, IP_RW, 1, IPS_IDLE);
 
 	return true;
 }
@@ -140,7 +140,7 @@ bool QHYCCD::initProperties()
 
 	if (HasFilterWheel) {
 		initFilterProperties(deviceName(), FILTER_TAB);
-		GetFilterNames(deviceName(), FILTER_TAB);
+		GetFilterNames(FILTER_TAB);
 	}
 
 	if (HasTemperatureControl) {

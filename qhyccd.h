@@ -7,12 +7,12 @@
 #include <string.h>
 #include <string>
 #include <sys/time.h>
+#include <unistd.h>
 
 #include <fitsio.h>
 
 #include <indidevapi.h>
 #include <indicom.h>
-#include <defaultdriver.h>
 #include <indiccd.h>
 #include <indifilterinterface.h>
 #include <base64.h>
@@ -53,10 +53,12 @@ public:
 	bool initProperties();
 	bool updateProperties();
 
+	virtual const char *deviceName() = 0;
+
 	virtual void addFITSKeywords(fitsfile *fptr);
 
 	/* Not all cameras have CFW interface */
-	virtual bool GetFilterNames(const char *deviceName, const char *groupName);
+	virtual bool GetFilterNames(const char *groupName);
 	virtual bool SetFilterNames() { return false; }
 	virtual bool SelectFilter(int i) { return false; }
 	virtual int QueryFilter() { return 0; }

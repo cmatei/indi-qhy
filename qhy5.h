@@ -22,6 +22,7 @@ public:
 	~QHY5() {}
 
 	const char *getDefaultName() { return "QHY5"; }
+	const char *deviceName() { return getDefaultName(); }
 
 	void initCamera();
 
