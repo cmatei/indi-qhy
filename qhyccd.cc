@@ -114,6 +114,7 @@ int QHYCCD::bulk_transfer_read(uint8_t ep, uint8_t *data, int psize, int pnum, i
 void QHYCCD::TimerHit()
 {
 	struct timeval now;
+	static int counter = 0;
 
 	fprintf(stderr, "TIMER !!\n\n");
 
@@ -125,8 +126,15 @@ void QHYCCD::TimerHit()
 			ExposureComplete();
 		}
 
-		if (HasTemperatureControl)
-			TempControlTimer();
+		if (HasTemperatureControl) {
+			/* make this slower, at 2 sec */
+
+			counter++;
+			if (counter >= 2) {
+				counter = 0;
+				TempControlTimer();
+			}
+		}
 
 		SetTimer(QHYCCD_TIMER);
 	}

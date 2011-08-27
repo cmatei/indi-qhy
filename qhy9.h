@@ -18,6 +18,8 @@ class QHY9 : public QHYCCD
 	static const int QHY9_REGISTERS_CMD = 0xB5;
 
 	static const int QHY9_DATA_BULK_EP = 0x86;
+	static const int QHY9_INTERRUPT_WRITE_EP = 0x01;
+	static const int QHY9_INTERRUPT_READ_EP  = 0x81;
 
 public:
 	QHY9(libusb_device *usbdev)
@@ -45,7 +47,9 @@ private:
 	double degrees_to_mv(double degrees);
 
 	int  getDC201();
+	int  getDC201Interrupt();
 	void setDC201(uint8_t PWM, uint8_t FAN);
+	void setDC201Interrupt(uint8_t PWM, uint8_t FAN);
 
 	void setCameraRegisters();
 

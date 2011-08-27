@@ -194,6 +194,7 @@ double QHY9::degrees_to_mv(double degrees)
 	return V;
 }
 
+#if 0
 int QHY9::getDC201()
 {
 	unsigned char buffer[4] = { 0, 0, 0, 0 };
@@ -211,6 +212,37 @@ void QHY9::setDC201(uint8_t PWM, uint8_t FAN)
 	buffer[1] = 0xFF;
 
 	libusb_control_transfer(usb_handle, 0x40, 0xc6, 0, 0, buffer, 2, 0);
+}
+#endif
+
+
+int QHY9::getDC201Interrupt()
+{
+	unsigned char buffer[4] = { 0, 0, 0, 0 };
+	int transferred;
+
+	/* FIXME: WTF ?! A bulk transfer works, an interrupt_transfer doesn't ?!?! */
+	libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_READ_EP, buffer, 4, &transferred, 0);
+
+	//fprintf(stderr, "inte: %02x %02x %02x %02x\n", buffer[0], buffer[1], buffer[2], buffer[3]);
+
+	return ((int16_t) (buffer[1] * 256 + buffer[2]));
+}
+
+
+void QHY9::setDC201Interrupt(uint8_t PWM, uint8_t FAN)
+{
+	uint8_t buffer[3];
+	int r, transferred;
+
+	buffer[0] = 0x01;
+	buffer[1] = PWM;
+	buffer[2] = FAN;
+
+	/* FIXME: WTF ?! A bulk transfer works, an interrupt_transfer doesn't ?!?! */
+	r = libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_WRITE_EP, buffer, 3, &transferred, 0);
+
+	//fprintf(stderr, "setdc201: write %d, transferred %d\n", r, transferred);
 }
 
 void QHY9::setCameraRegisters()
@@ -371,33 +403,6 @@ void QHY9::setShutter(int mode)
 	vendor_request_write(QHY9_SHUTTER_CMD, buffer, 1);
 }
 
-#if 0
-
-/* this interrupt thing won't work */
-int QHYCCD::GetDC103FromInterrupt()
-{
-	uint8_t buffer[4] = { 0, 0, 0, 0 };
-
-	usb_interrupt_rxd(buffer, 4);
-
-	fprintf(stderr, "inte: %02x %02x %02x %02x\n", buffer[0], buffer[1], buffer[2], buffer[3]);
-
-	return ((int16_t) (buffer[1] * 256 + buffer[2]));
-}
-
-void QHYCCD::SetDC103FromInterrupt(uint8_t PWM, uint8_t FAN)
-{
-	uint8_t buffer[3];
-
-	buffer[0] = 0x01;
-	buffer[1] = PWM;
-	buffer[2] = FAN;
-
-	usb_interrupt_txd(buffer, 3);
-}
-
-#endif
-
 /* FIXME: This needs some TLC, this "regulator" oscillates and swings +/- 1.5 deg */
 void QHY9::TempControlTimer()
 {
@@ -408,7 +413,7 @@ void QHY9::TempControlTimer()
 	alternate = !alternate;
 
 	if (alternate) {
-		voltage = getDC201();
+		voltage = getDC201Interrupt();
 		Temperature = mv_to_degrees(1.024 * voltage);
 	} else {
 
@@ -424,7 +429,7 @@ void QHY9::TempControlTimer()
 
 		TEC_PWM = clamp_int(TEC_PWM, 0, TEC_PWMLimit * 256 / 100);
 
-		setDC201(TEC_PWM, 255);
+		setDC201Interrupt(TEC_PWM, 255);
 
 		TemperatureN[2].value = Temperature;
 		TemperatureN[3].value = TEC_PWM * 100 / 256;
@@ -437,7 +442,7 @@ void QHY9::TempControlTimer()
 			counter = 0;
 		}
 
-#if 0
+#if 1
 		fprintf(stderr, "volt %.2f, PWM %d, t + 5 %.2f, t + 1 %.2f, t + 0.2 %.2f, t - 5 %.2f, t - 1 %.2f, t - 0.2 %.2f\n",
 			voltage, TEC_PWM,
 			degrees_to_mv(TemperatureTarget + 5), degrees_to_mv(TemperatureTarget + 1), degrees_to_mv(TemperatureTarget + 0.2),
