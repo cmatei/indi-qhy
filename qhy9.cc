@@ -233,14 +233,14 @@ int QHY9::getDC201Interrupt()
 void QHY9::setDC201Interrupt(uint8_t PWM, uint8_t FAN)
 {
 	uint8_t buffer[3];
-	int r, transferred;
+	int transferred;
 
 	buffer[0] = 0x01;
 	buffer[1] = PWM;
 	buffer[2] = FAN;
 
 	/* FIXME: WTF ?! A bulk transfer works, an interrupt_transfer doesn't ?!?! */
-	r = libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_WRITE_EP, buffer, 3, &transferred, 0);
+	libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_WRITE_EP, buffer, 3, &transferred, 0);
 
 	//fprintf(stderr, "setdc201: write %d, transferred %d\n", r, transferred);
 }
@@ -401,6 +401,18 @@ void QHY9::setShutter(int mode)
 {
 	uint8_t buffer[1] = { mode };
 	vendor_request_write(QHY9_SHUTTER_CMD, buffer, 1);
+}
+
+void QHY9::SetCFWSlot(int slot)
+{
+	uint8_t buffer[2];
+
+	buffer[0] = 0x5A;
+	buffer[1] = clamp_int(slot, 0, 4);
+
+	vendor_request_write(QHY9_CFW_CMD, buffer, 2);
+
+	fprintf(stderr, "FILTER: slot %d\n\n\n\n", buffer[1]);
 }
 
 /* FIXME: This needs some TLC, this "regulator" oscillates and swings +/- 1.5 deg */

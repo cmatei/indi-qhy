@@ -255,7 +255,7 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
 			CFWSlotN[0].value = v;
 			CFWSlotNV->s = IPS_OK;
 
-			setCFWSlot(CFWSlot);
+			SetCFWSlot(CFWSlot - 1);
 
 			IDSetNumber(CFWSlotNV, NULL);
 

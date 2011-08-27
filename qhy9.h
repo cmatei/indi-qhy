@@ -5,6 +5,7 @@ class QHYCCD;
 
 class QHY9 : public QHYCCD
 {
+public:
 	static const int SHUTTER_OPEN = 0;
 	static const int SHUTTER_CLOSE = 1;
 	static const int SHUTTER_FREE = 2;
@@ -13,15 +14,16 @@ class QHY9 : public QHYCCD
 	static const int QHY9_SENSOR_HEIGHT = 2574;
 
 	/* vendor requests */
-	static const int QHY9_SHUTTER_CMD = 0xC7;
 	static const int QHY9_BEGIN_VIDEO_CMD = 0xB3;
-	static const int QHY9_REGISTERS_CMD = 0xB5;
+	static const int QHY9_REGISTERS_CMD   = 0xB5;
+	static const int QHY9_CFW_CMD         = 0xC1;
+	static const int QHY9_VERSION_CMD     = 0xC2;
+	static const int QHY9_SHUTTER_CMD     = 0xC7;
 
 	static const int QHY9_DATA_BULK_EP = 0x86;
 	static const int QHY9_INTERRUPT_WRITE_EP = 0x01;
 	static const int QHY9_INTERRUPT_READ_EP  = 0x81;
 
-public:
 	QHY9(libusb_device *usbdev)
 		: QHYCCD(usbdev) { initDefaults(); setDeviceName("QHY9"); }
 	~QHY9() {}
@@ -40,6 +42,7 @@ public:
 protected:
 
 	void TempControlTimer();
+	void SetCFWSlot(int slot);
 
 private:
 

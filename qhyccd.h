@@ -24,10 +24,10 @@
 
 class QHYCCD : public INDI::CCD
 {
+public:
 	static const int QHYCCD_REQUEST_READ  = 0xC0;
 	static const int QHYCCD_REQUEST_WRITE = 0x40;
 
-public:
         QHYCCD(libusb_device *usbdev) : CCD() { initDefaults(); this->usb_dev = usbdev; }
 	~QHYCCD() { Disconnect(); }
 
@@ -50,7 +50,7 @@ protected:
 	virtual void TempControlTimer() {}
 	void   TimerHit();
 
-	virtual void setCFWSlot(int slot) { }
+	virtual void SetCFWSlot(int slot) { }
 
 	int vendor_request_read(uint8_t req, uint8_t *data, uint16_t length);
 	int vendor_request_write(uint8_t req, uint8_t *data, uint16_t length);

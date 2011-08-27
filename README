@@ -9,8 +9,19 @@ in the near future and submit to INDI upstream.
 QHY9 Current Status
 -------------------
 
-- downloading images at bin 1x1, 2x2, 3x3, 4x4 works, subframes don't
-- CFW control isn't working yet
-- controlling the shutter to shoot darks is not working (any more?! it seemed to work)
+What works:
+
+- getting images at bin 1x1, 2x2, 3x3, 4x4 works. At least I think they do,
+  I've only shot darks :-)
 - temperature control works by using libusb_bulk_transfer to the interrupt EPs instead
-  of libusb_interrupt_transfer. No idea why or what this means.
+  of libusb_interrupt_transfer as per example libqhyccd. The regulator itself is crappy
+  (oscillates), but will do for first light.
+- CFW control
+
+What doesn't work:
+
+- controlling the shutter to shoot darks (why?! this seemed to work earlier)
+- subframes
+- all sorts of various options like download speed, etc are missing
+- error checking
+
