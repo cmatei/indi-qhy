@@ -17,6 +17,7 @@ class QHY9 : public QHYCCD
 	static const int QHY9_BEGIN_VIDEO_CMD = 0xB3;
 	static const int QHY9_REGISTERS_CMD = 0xB5;
 
+	static const int QHY9_DATA_BULK_EP = 0x86;
 
 public:
 	QHY9(libusb_device *usbdev)
@@ -32,6 +33,7 @@ public:
 	const char *getDefaultName() { return "QHY9"; }
 
 	int StartExposure(float duration);
+	bool ExposureComplete();
 
 protected:
 

@@ -73,7 +73,86 @@ bool QHY9::ISNewText  (const char *dev, const char *name, char *texts[], char *n
 
 int QHY9::StartExposure(float duration)
 {
-	return -1;
+	if (exposing)
+		return -1;
+
+	Exptime = duration * 1000;
+
+	setCameraRegisters();
+	usleep(10000);
+
+	if (FrameType == FRAME_TYPE_DARK || FrameType == FRAME_TYPE_BIAS) {
+		fprintf(stderr, "SHOOTING A DARK, CLOSING SHUTTER\n");
+		setShutter(SHUTTER_CLOSE);
+		usleep(500*1000);		     // shutter speed is 1/10 to 1/2 sec
+	}
+
+	exposing = true;
+	gettimeofday(&exposure_start, NULL);
+
+	beginVideo();
+
+	// 0 - exp. running on timers, 1 short exposures already done,  -1 error
+	return 0;
+}
+
+
+bool QHY9::ExposureComplete()
+{
+	static uint8_t data[QHY9_SENSOR_HEIGHT * QHY9_SENSOR_WIDTH * 2];
+	int pos;
+	void *memptr;
+	size_t memsize;
+	int status=0;
+	long naxes[2];
+	long naxis=2;
+
+	fitsfile *fptr=NULL;
+
+	if (bulk_transfer_read(QHY9_DATA_BULK_EP, data, p_size, total_p, &pos))
+		return false;
+
+
+	setShutter(SHUTTER_FREE);
+
+	fprintf(stderr, "GOT DATA!\n");
+
+	naxes[0]=LineSize;
+	naxes[1]=VerticalSize;
+
+	//  Now we have to send fits format data to the client
+	memsize=2880;
+	memptr=malloc(memsize);
+	fits_create_memfile(&fptr,&memptr,&memsize,2880,realloc,&status);
+	if(status) {
+                IDLog("Error: Failed to create FITS image\n");
+                fits_report_error(stderr, status);  /* print out any error messages */
+                return false;
+	}
+        fits_create_img(fptr, USHORT_IMG , naxis, naxes, &status);
+        if (status)
+        {
+                IDLog("Error: Failed to create FITS image\n");
+                fits_report_error(stderr, status);  /* print out any error messages */
+                return false;
+        }
+
+	fits_write_img(fptr, TUSHORT, 1, LineSize * VerticalSize, data, &status);
+	if (status)
+        {
+                IDLog("Error: Failed to write FITS image\n");
+                fits_report_error(stderr, status);  /* print out any error messages */
+                return false;
+        }
+        fits_close_file(fptr,&status);
+        //IDLog("Built the fits file\n");
+
+	ImageExposureNV->s=IPS_OK;
+	IDSetNumber(ImageExposureNV, NULL);
+
+	uploadfile(memptr,memsize);
+	free(memptr);
+	return true;
 }
 
 double QHY9::mv_to_degrees(double mv)
@@ -149,7 +228,7 @@ void QHY9::setCameraRegisters()
 		VBIN = 1;
 		LineSize = 3584;
 		VerticalSize = 2574;
-		patch_size = 3584 * 2; // multiple of 512
+		p_size = 3584 * 2; // must be multiple of 512 ?
 		break;
 
 	case 2:
@@ -157,7 +236,7 @@ void QHY9::setCameraRegisters()
 		VBIN = 2;
 		LineSize = 1792;
 		VerticalSize = 1287;
-		patch_size = 3584 * 2; // multiple of 512
+		p_size = 3584 * 2; // multiple of 512
 		break;
 
 	case 3:
@@ -165,7 +244,7 @@ void QHY9::setCameraRegisters()
 		VBIN = 3;
 		LineSize = 1196;
 		VerticalSize = 858;
-		patch_size = 1024;
+		p_size = 1024;
 		break;
 
 	case 4:
@@ -173,18 +252,18 @@ void QHY9::setCameraRegisters()
 		VBIN = 4;
 		LineSize = 896;
 		VerticalSize = 644;
-		patch_size = 1024;
+		p_size = 1024;
 		break;
 	}
 
 	T = (LineSize * VerticalSize + TopSkipPix) * 2;
 
-	if (T % patch_size) {
-		*total_p = T / patch_size + 1;
-		*patchnum = (*total_p * patch_size - T) / 2 + 16;
+	if (T % p_size) {
+		total_p = T / p_size + 1;
+		patchnum = (total_p * p_size - T) / 2 + 16;
 	} else {
-		*total_p = T / patch_size;
-		*patchnum = 16;
+		total_p = T / p_size;
+		patchnum = 16;
 	}
 
 	/* FIXME */
@@ -205,7 +284,6 @@ void QHY9::setCameraRegisters()
 
 	// CLAMP ?!
 	CLAMP = 0; // 1 also
-
 
 	/* fill in register buffer */
 	memset(REG, 0, 64);
@@ -239,8 +317,8 @@ void QHY9::setCameraRegisters()
 	REG[15]=MSB(LiveVideo_BeginLine );
 	REG[16]=LSB(LiveVideo_BeginLine );
 
-	REG[17]=MSB(*patchnum);
-	REG[18]=LSB(*patchnum);
+	REG[17]=MSB(patchnum);
+	REG[18]=LSB(patchnum);
 
 	REG[19]=MSB(AnitInterlace );
 	REG[20]=LSB(AnitInterlace );
@@ -320,7 +398,7 @@ void QHYCCD::SetDC103FromInterrupt(uint8_t PWM, uint8_t FAN)
 
 #endif
 
-/* FIXME: The regulator needs some TLC, this "regulator" oscillates and swings +/- 1.5 deg */
+/* FIXME: This needs some TLC, this "regulator" oscillates and swings +/- 1.5 deg */
 void QHY9::TempControlTimer()
 {
 	static bool alternate = false;	     // first time, read
@@ -336,12 +414,12 @@ void QHY9::TempControlTimer()
 
 		if (voltage > degrees_to_mv(TemperatureTarget + 5))
 			TEC_PWM = TEC_PWM + 5;
-		else if (voltage > degrees_to_mv(TemperatureTarget + 0.5))
+		else if (voltage > degrees_to_mv(TemperatureTarget + 1))
 			TEC_PWM = TEC_PWM + 1;
 
 		if (voltage < degrees_to_mv(TemperatureTarget - 5))
 			TEC_PWM = TEC_PWM - 5;
-		else if (voltage < degrees_to_mv(TemperatureTarget - 0.5))
+		else if (voltage < degrees_to_mv(TemperatureTarget - 1))
 			TEC_PWM = TEC_PWM - 1;
 
 		TEC_PWM = clamp_int(TEC_PWM, 0, TEC_PWMLimit * 256 / 100);
@@ -359,7 +437,7 @@ void QHY9::TempControlTimer()
 			counter = 0;
 		}
 
-#if 1
+#if 0
 		fprintf(stderr, "volt %.2f, PWM %d, t + 5 %.2f, t + 1 %.2f, t + 0.2 %.2f, t - 5 %.2f, t - 1 %.2f, t - 0.2 %.2f\n",
 			voltage, TEC_PWM,
 			degrees_to_mv(TemperatureTarget + 5), degrees_to_mv(TemperatureTarget + 1), degrees_to_mv(TemperatureTarget + 0.2),

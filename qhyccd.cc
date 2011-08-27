@@ -92,9 +92,39 @@ int QHYCCD::vendor_request_write(uint8_t req, uint8_t *data, uint16_t length)
 	return libusb_control_transfer(usb_handle, QHYCCD_REQUEST_WRITE, req, 0, 0, data, length, 0);
 }
 
+int QHYCCD::bulk_transfer_read(uint8_t ep, uint8_t *data, int psize, int pnum, int* pos)
+{
+        int ret, length_transfered;
+        int i;
+
+        for (i = 0; i < pnum; ++i) {
+		length_transfered = 0;
+
+                ret = libusb_bulk_transfer(usb_handle ,ep, data + i * psize, psize, &length_transfered, 0);
+                if (ret < 0 || length_transfered != psize) {
+			fprintf(stderr, "bulk_transfer %d, %d\n", ret, length_transfered);
+			return -1;
+                }
+                *pos = i;
+        }
+
+        return 0;
+}
+
 void QHYCCD::TimerHit()
 {
+	struct timeval now;
+
+	fprintf(stderr, "TIMER !!\n\n");
+
 	if (isConnected()) {
+
+		gettimeofday(&now, NULL);
+		if (exposing && (tv_diff(&now, &exposure_start) >= Exptime)) {
+			exposing = false;
+			ExposureComplete();
+		}
+
 		if (HasTemperatureControl)
 			TempControlTimer();
 

@@ -5,3 +5,13 @@ Nothing quite works yet :-) but the QHY9 support (which I own) is almost there.
 I plan to add support for the other documented cameras (and the existing QHY5 driver)
 in the near future and submit to INDI upstream.
 
+
+QHY9 Current Status
+-------------------
+
+- downloading images at bin 1x1, 2x2, 3x3, 4x4 works, subframes don't
+- the temperature regulator doesn't work during exposure. I need to
+  use the interrupt versions of get/setDC103... but I get an I/O error for them ?!
+- CFW control isn't working yet
+- controlling the shutter to shoot darks is not working (any more?! it seemed to work)
+

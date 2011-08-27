@@ -6,6 +6,7 @@
 #include <math.h>
 #include <string.h>
 #include <string>
+#include <sys/time.h>
 
 #include <fitsio.h>
 
@@ -54,9 +55,14 @@ protected:
 	int vendor_request_read(uint8_t req, uint8_t *data, uint16_t length);
 	int vendor_request_write(uint8_t req, uint8_t *data, uint16_t length);
 
+	int bulk_transfer_read(uint8_t ep, uint8_t *data, int p_size, int p_num, int* pos);
+
 	bool                  usb_connected;
 	libusb_device        *usb_dev;	         /* USB device address */
 	libusb_device_handle *usb_handle;	 /* USB device handle */
+
+	bool                  exposing;	         /* true if currently exposing */
+	struct timeval        exposure_start;	 /* used by the timer to call ExposureComplete() */
 
 	/* Temperature control */
 	bool    HasTemperatureControl;
@@ -110,11 +116,17 @@ protected:
 	unsigned char MotorHeating;   //0,1,2
 	unsigned char WindowHeater;   //0-15
 
-	int patch_size;			     /* ???? what is a "patch" ? */
+	/* I don't fully understand these */
+	int p_size;
+	int patchnum;
+	int total_p;
 };
 
 
 /* Utility functions */
+
+#define tv_diff(t1, t2) ((((t1)->tv_sec - (t2)->tv_sec) * 1000) + (((t1)->tv_usec - (t2)->tv_usec) / 1000))
+
 static inline double clamp_double(double val, double min, double max)
 {
 	if (val < min) return min;
@@ -138,5 +150,7 @@ static inline uint8_t LSB(unsigned short val)
 {
 	return (val & 0xff);
 }
+
+
 
 #endif
