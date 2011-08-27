@@ -1,7 +1,7 @@
 
 Temporary home for INDI (http://indilib.org) drivers for QHY astronomical cameras.
 
-Nothing quite works yet :-) but the QHY9 support (which I own) is almost ready.
+Nothing quite works yet :-) but the QHY9 support (which I own) is almost there.
 I plan to add support for the other documented cameras (and the existing QHY5 driver)
 in the near future and submit to INDI upstream.
 
