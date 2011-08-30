@@ -79,7 +79,7 @@ int QHY9::StartExposure(float duration)
 	Exptime = duration * 1000;
 
 	setCameraRegisters();
-	usleep(10000);
+	usleep(100000);
 
 	if (FrameType == FRAME_TYPE_DARK || FrameType == FRAME_TYPE_BIAS) {
 		fprintf(stderr, "SHOOTING A DARK, CLOSING SHUTTER\n");

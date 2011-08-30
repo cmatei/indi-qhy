@@ -17,10 +17,10 @@ What works:
   of libusb_interrupt_transfer as per example libqhyccd. The regulator itself is crappy
   (oscillates), but will do for first light.
 - CFW control
+- controlling the shutter to shoot darks
 
 What doesn't work:
 
-- controlling the shutter to shoot darks (why?! this seemed to work earlier)
 - subframes
 - all sorts of various options like download speed, etc are missing
 - error checking
