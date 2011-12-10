@@ -100,13 +100,15 @@ int QHY9::StartExposure(float duration)
 bool QHY9::ExposureComplete()
 {
 	static uint8_t data[QHY9_SENSOR_HEIGHT * QHY9_SENSOR_WIDTH * 2];
+	static char dateobs[32];
 	int pos;
 	void *memptr;
 	size_t memsize;
 	int status=0;
 	long naxes[2];
 	long naxis=2;
-
+	float exposure;
+	struct tm *dobs;
 	fitsfile *fptr=NULL;
 
 	if (bulk_transfer_read(QHY9_DATA_BULK_EP, data, p_size, total_p, &pos))
@@ -136,6 +138,17 @@ bool QHY9::ExposureComplete()
                 fits_report_error(stderr, status);  /* print out any error messages */
                 return false;
         }
+
+	exposure = Exptime / 1000.0;
+	fits_write_key(fptr, TFLOAT, "EXPTIME", &exposure, "Exposure time in seconds", &status);
+
+	dobs = gmtime(&exposure_start.tv_sec);
+	snprintf(dateobs, 32, "%04d-%02d-%02dT%02d:%02d:%02d.%03d",
+		 1900 + dobs->tm_year, 1 + dobs->tm_mon, dobs->tm_mday,
+		 dobs->tm_hour, dobs->tm_min, dobs->tm_sec,
+		 (int) (exposure_start.tv_usec / 1000));
+
+	fits_write_key(fptr, TSTRING, "DATE-OBS", dateobs, "Date of start of observation, UTC", &status);
 
 	fits_write_img(fptr, TUSHORT, 1, LineSize * VerticalSize, data, &status);
 	if (status)
