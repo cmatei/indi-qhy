@@ -10,7 +10,7 @@ public:
 	static const int QHY5_SENSOR_HEIGHT = 1024;
 
 	/* vendor requests */
-	static const int QHY5_BEGIN_VIDEO_CMD = 0xB3;
+	static const int QHY5_START_EXPOSURE_CMD = 0x12;
 	static const int QHY5_REGISTERS_CMD   = 0xB5;
 	static const int QHY5_CFW_CMD         = 0xC1;
 
@@ -30,6 +30,9 @@ public:
 
 private:
 	void setCameraRegisters();
+
+	void beginVideo();
+	void abortVideo();
 
 };
 

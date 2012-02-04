@@ -13,7 +13,14 @@ public:
 	static const int QHY9_SENSOR_WIDTH = 3584;
 	static const int QHY9_SENSOR_HEIGHT = 2574;
 
-	/* vendor requests */
+	/* control request types */
+	// LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE;
+	static const int QHY9_VENDOR_REQUEST_WRITE = 0x40;
+
+	// LIBUSB_ENDPOINT_IN  | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE;
+	static const int QHY9_VENDOR_REQUEST_READ  = 0xC0;
+
+	/* vendor request commands */
 	static const int QHY9_BEGIN_VIDEO_CMD = 0xB3;
 	static const int QHY9_REGISTERS_CMD   = 0xB5;
 	static const int QHY9_CFW_CMD         = 0xC1;
@@ -32,9 +39,11 @@ public:
 
 	void initDefaults();
 
-
 	int StartExposure(float duration);
-	bool ExposureComplete();
+
+//	bool ExposureComplete();
+
+	void addFITSKeywords(fitsfile *fptr);
 
 protected:
 
@@ -46,9 +55,7 @@ private:
 	double mv_to_degrees(double mv);
 	double degrees_to_mv(double degrees);
 
-	int  getDC201();
 	int  getDC201Interrupt();
-	void setDC201(uint8_t PWM, uint8_t FAN);
 	void setDC201Interrupt(uint8_t PWM, uint8_t FAN);
 
 	void setCameraRegisters();

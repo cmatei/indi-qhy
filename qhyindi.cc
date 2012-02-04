@@ -1,6 +1,5 @@
 
 #include "qhyccd.h"
-#include "qhy9.h"
 
 using namespace std;
 

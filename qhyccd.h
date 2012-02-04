@@ -26,13 +26,16 @@
 class QHYCCD : public INDI::CCD
 {
 public:
-	static const int QHYCCD_REQUEST_READ  = 0xC0;
-	static const int QHYCCD_REQUEST_WRITE = 0x40;
+	static QHYCCD *detectCamera();
+
+	// LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE
+	//static const int QHYCCD_REQUEST_READ  = 0xC0;
+
+	// LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE
+	//static const int QHYCCD_REQUEST_WRITE = 0x40;
 
         QHYCCD(libusb_device *usbdev) : CCD() { initDefaults(); this->usb_dev = usbdev; }
 	~QHYCCD() { Disconnect(); }
-
-	static QHYCCD *detectCamera();
 
 	virtual void   initDefaults();
 
@@ -47,16 +50,18 @@ public:
 	bool initProperties();
 	bool updateProperties();
 
+//	bool ExposureComplete();
+
 protected:
 	virtual void TempControlTimer() {}
 	void   TimerHit();
 
 	virtual void SetCFWSlot(int slot) { }
 
-	int vendor_request_read(uint8_t req, uint8_t *data, uint16_t length);
-	int vendor_request_write(uint8_t req, uint8_t *data, uint16_t length);
+//	int vendor_request_read(uint8_t req, uint8_t *data, uint16_t length);
+//	int vendor_request_write(uint8_t req, uint8_t *data, uint16_t length);
 
-	int bulk_transfer_read(uint8_t ep, uint8_t *data, int p_size, int p_num, int* pos);
+//	int bulk_transfer_read(uint8_t ep, uint8_t *data, int p_size, int p_num, int* pos);
 
 	bool                  usb_connected;
 	libusb_device        *usb_dev;	         /* USB device address */

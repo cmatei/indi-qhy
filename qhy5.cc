@@ -44,11 +44,12 @@ void QHY5::initDefaults()
 
 int QHY5::StartExposure(float duration)
 {
-#if 0
 	if (exposing)
 		return -1;
 
 	Exptime = duration * 1000;
+
+#if 0
 
 	setCameraRegisters();
 	usleep(100000);
@@ -60,6 +61,15 @@ int QHY5::StartExposure(float duration)
 #endif
 	// 0 - exp. running on timers, 1 short exposures already done,  -1 error
 	return 0;
+}
+
+void QHY5::beginVideo()
+{
+
+}
+
+void QHY5::abortVideo()
+{
 }
 
 
@@ -206,6 +216,6 @@ void QHY5::setCameraRegisters()
 	REG[58]=SDRAM_MAXSIZE ;
 	REG[63]=Trig ;
 
-	vendor_request_write(QHY5_REGISTERS_CMD, REG, 64);
+	//	vendor_request_write(QHY5_REGISTERS_CMD, REG, 64);
 }
 

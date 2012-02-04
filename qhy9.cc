@@ -82,48 +82,13 @@ int QHY9::StartExposure(float duration)
 	return 0;
 }
 
-bool QHY9::ExposureComplete()
+
+void QHY9::addFITSKeywords(fitsfile *fptr)
 {
-#if 0
-	static uint8_t data[QHY9_SENSOR_HEIGHT * QHY9_SENSOR_WIDTH * 2];
 	static char obsdata[128];
-	int pos;
-	void *memptr;
-	size_t memsize;
-	int status=0;
-	long naxes[2];
-	long naxis=2;
 	float exposure;
 	struct tm *dobs;
-	fitsfile *fptr=NULL;
-
-	if (bulk_transfer_read(QHY9_DATA_BULK_EP, data, p_size, total_p, &pos))
-		return false;
-
-	setShutter(SHUTTER_FREE);
-
-	fprintf(stderr, "GOT DATA!\n");
-
-	naxis = 2;
-	naxes[0]=LineSize;
-	naxes[1]=VerticalSize;
-
-	//  Now we have to send fits format data to the client
-	memsize=2880;
-	memptr=malloc(memsize);
-	fits_create_memfile(&fptr,&memptr,&memsize,2880,realloc,&status);
-	if(status) {
-                IDLog("Error: Failed to create FITS image\n");
-                fits_report_error(stderr, status);  /* print out any error messages */
-                return false;
-	}
-        fits_create_img(fptr, USHORT_IMG , naxis, naxes, &status);
-        if (status)
-        {
-                IDLog("Error: Failed to create FITS image\n");
-                fits_report_error(stderr, status);  /* print out any error messages */
-                return false;
-        }
+	int status = 0;
 
 	/* Exposure time */
 	exposure = Exptime / 1000.0;
@@ -153,24 +118,6 @@ bool QHY9::ExposureComplete()
 	/* Offset */
 	fits_write_key(fptr, TBYTE, "CCDBIAS", &Offset, "CCD Offset", &status);
 
-	fits_write_img(fptr, TUSHORT, 1, LineSize * VerticalSize, data, &status);
-	if (status)
-        {
-                IDLog("Error: Failed to write FITS image\n");
-                fits_report_error(stderr, status);  /* print out any error messages */
-                return false;
-        }
-        fits_close_file(fptr,&status);
-        //IDLog("Built the fits file\n");
-
-	ImageExposureNV->s=IPS_OK;
-	IDSetNumber(ImageExposureNV, NULL);
-
-	uploadfile(memptr,memsize);
-	free(memptr);
-#endif
-
-	return true;
 }
 
 
@@ -212,27 +159,6 @@ double QHY9::degrees_to_mv(double degrees)
 
 	return V;
 }
-
-#if 0
-int QHY9::getDC201()
-{
-	unsigned char buffer[4] = { 0, 0, 0, 0 };
-
-	libusb_control_transfer(usb_handle, 0xC0, 0xC5, 0, 0, buffer, 4, 0);
-	//fprintf(stderr, "vend: %02x %02x %02x %02x\n", buffer[0], buffer[1], buffer[2], buffer[3]);
-	return ((int16_t) (buffer[1] * 256 + buffer[2]));
-}
-
-void QHY9::setDC201(uint8_t PWM, uint8_t FAN)
-{
-	uint8_t buffer[2];
-
-	buffer[0] = PWM;
-	buffer[1] = 0xFF;
-
-	libusb_control_transfer(usb_handle, 0x40, 0xc6, 0, 0, buffer, 2, 0);
-}
-#endif
 
 
 int QHY9::getDC201Interrupt()
@@ -407,23 +333,35 @@ void QHY9::setCameraRegisters()
 	REG[58]=SDRAM_MAXSIZE ;
 	REG[63]=Trig ;
 
-	vendor_request_write(QHY9_REGISTERS_CMD, REG, 64);
+	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
+				QHY9_REGISTERS_CMD, 0, 0, REG, 64, 0);
+//	vendor_request_write(QHY9_REGISTERS_CMD, REG, 64);
 }
 
 void QHY9::beginVideo()
 {
 	uint8_t buffer[1] = { 100 };
-	vendor_request_write(QHY9_BEGIN_VIDEO_CMD, buffer, 1);
+
+	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
+				QHY9_BEGIN_VIDEO_CMD, 0, 0, buffer, 1, 0);
 }
 
 void QHY9::abortVideo()
 {
+#if 0
+	/* FIXME: UNCHECKED IN DOCS !! */
+	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
+				QHY9_ABORT_VIDEO_CMD, 0, 0,
+				NULL, 0, 0);
+#endif
 }
 
 void QHY9::setShutter(int mode)
 {
 	uint8_t buffer[1] = { mode };
-	vendor_request_write(QHY9_SHUTTER_CMD, buffer, 1);
+
+	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
+				QHY9_SHUTTER_CMD, 0, 0, buffer, 1, 0);
 }
 
 void QHY9::SetCFWSlot(int slot)
@@ -433,9 +371,10 @@ void QHY9::SetCFWSlot(int slot)
 	buffer[0] = 0x5A;
 	buffer[1] = clamp_int(slot, 0, 4);
 
-	vendor_request_write(QHY9_CFW_CMD, buffer, 2);
-
 	fprintf(stderr, "FILTER: slot %d\n\n\n\n", buffer[1]);
+
+	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
+				QHY9_CFW_CMD, 0, 0, buffer, 2, 0);
 }
 
 /* FIXME: This needs some TLC, this "regulator" oscillates and swings +/- 1.5 deg */
@@ -458,19 +397,6 @@ void QHY9::TempControlTimer()
 		voltage = getDC201Interrupt();
 		Temperature = mv_to_degrees(1.024 * voltage);
 	} else {
-
-#if 0
-		if (voltage > degrees_to_mv(TemperatureTarget + 5))
-			TEC_PWM = TEC_PWM + 5;
-		else if (voltage > degrees_to_mv(TemperatureTarget + 1))
-			TEC_PWM = TEC_PWM + 1;
-
-		if (voltage < degrees_to_mv(TemperatureTarget - 5))
-			TEC_PWM = TEC_PWM - 5;
-		else if (voltage < degrees_to_mv(TemperatureTarget - 1))
-			TEC_PWM = TEC_PWM - 1;
-#else
-
 		if (Temperature > TemperatureTarget + 5)
 			TEC_PWM += 5;
 		else if (Temperature < TemperatureTarget - 5)
@@ -479,7 +405,6 @@ void QHY9::TempControlTimer()
 			TEC_PWM += 1;
 		else if (Temperature < TemperatureTarget - 0.7)
 			TEC_PWM -= 1;
-#endif
 
 		TEC_PWM = clamp_int(TEC_PWM, 0, TEC_PWMLimit * 256 / 100);
 
@@ -496,16 +421,8 @@ void QHY9::TempControlTimer()
 			counter = 0;
 		}
 
-#if 0
-		fprintf(stderr, "volt %.2f, PWM %d, t + 5 %.2f, t + 1 %.2f, t + 0.2 %.2f, t - 5 %.2f, t - 1 %.2f, t - 0.2 %.2f\n",
-			voltage, TEC_PWM,
-			degrees_to_mv(TemperatureTarget + 5), degrees_to_mv(TemperatureTarget + 1), degrees_to_mv(TemperatureTarget + 0.2),
-			degrees_to_mv(TemperatureTarget - 5), degrees_to_mv(TemperatureTarget - 1), degrees_to_mv(TemperatureTarget - 0.2));
-#else
 		fprintf(stderr, "volt %.2f, temp %.2f, target %.2f, PWM %d\n",
 			voltage, Temperature, TemperatureTarget, TEC_PWM);
-#endif
-
 	}
 }
 
