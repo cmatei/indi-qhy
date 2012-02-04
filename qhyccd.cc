@@ -1,5 +1,6 @@
 #include "qhyccd.h"
 #include "qhy9.h"
+#include "qhy5.h"
 
 using namespace std;
 
@@ -40,6 +41,10 @@ QHYCCD *QHYCCD::detectCamera()
 
 		case QHYCCD_QHY9_DEVID:
 			camera = new QHY9(dev);
+			break;
+
+		case QHYCCD_QHY5_DEVID:
+			camera = new QHY5(dev);
 			break;
 		}
 	}
