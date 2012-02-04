@@ -12,44 +12,26 @@ void QHY9::initDefaults()
 	HasTemperatureControl = true;
 	HasColorFilterWheel = true;
 
-	XRes = QHY9_SENSOR_WIDTH;
-	YRes = QHY9_SENSOR_HEIGHT;
-
-	SubX = 0;
-	SubY = 0;
-	SubW = XRes;
-	SubH = YRes;
-
-	BinX = 1;
-	BinY = 1;
-
-	PixelSizex = 5.4;
-	PixelSizey = 5.4;
+	PrimaryCCD.setResolution(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT);
+	PrimaryCCD.setFrame(0, 0, QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT);
+	PrimaryCCD.setBin(1, 1);
+	PrimaryCCD.setPixelSize(5.4, 5.4);
+	PrimaryCCD.setFrameType(CCDChip::LIGHT_FRAME);
 
 	TemperatureTarget = 50.0;
+	Temperature = 50.0;
+	TEC_PWM = 0;
+	TEC_PWMLimit = 80;
+
 	CFWSlot = 1;
 
 	/* QHY9 specific */
 	Gain = 20;
 	Offset = 120;
 	MechanicalShutterMode = 0;
-	DownloadCloseTEC = 0;
+	DownloadCloseTEC = 1;
 	SDRAM_MAXSIZE = 100;
 }
-
-bool QHY9::initProperties()
-{
-	QHYCCD::initProperties();
-
-	return true;
-}
-
-bool QHY9::updateProperties()
-{
-	QHYCCD::updateProperties();
-	return true;
-}
-
 
 #if 0
 
@@ -73,6 +55,8 @@ bool QHY9::ISNewText  (const char *dev, const char *name, char *texts[], char *n
 
 int QHY9::StartExposure(float duration)
 {
+	CCDChip::CCD_FRAME type;
+
 	if (exposing)
 		return -1;
 
@@ -81,8 +65,10 @@ int QHY9::StartExposure(float duration)
 	setCameraRegisters();
 	usleep(100000);
 
-	if (FrameType == FRAME_TYPE_DARK || FrameType == FRAME_TYPE_BIAS) {
-		fprintf(stderr, "SHOOTING A DARK, CLOSING SHUTTER\n");
+	type = PrimaryCCD.getFrameType();
+
+	if (type == CCDChip::DARK_FRAME || type == CCDChip::BIAS_FRAME) {
+		//fprintf(stderr, "SHOOTING A DARK, CLOSING SHUTTER\n");
 		setShutter(SHUTTER_CLOSE);
 		usleep(500*1000);		     // shutter speed is 1/10 to 1/2 sec
 	}
@@ -96,11 +82,11 @@ int QHY9::StartExposure(float duration)
 	return 0;
 }
 
-
 bool QHY9::ExposureComplete()
 {
+#if 0
 	static uint8_t data[QHY9_SENSOR_HEIGHT * QHY9_SENSOR_WIDTH * 2];
-	static char dateobs[32];
+	static char obsdata[128];
 	int pos;
 	void *memptr;
 	size_t memsize;
@@ -114,11 +100,11 @@ bool QHY9::ExposureComplete()
 	if (bulk_transfer_read(QHY9_DATA_BULK_EP, data, p_size, total_p, &pos))
 		return false;
 
-
 	setShutter(SHUTTER_FREE);
 
 	fprintf(stderr, "GOT DATA!\n");
 
+	naxis = 2;
 	naxes[0]=LineSize;
 	naxes[1]=VerticalSize;
 
@@ -139,16 +125,33 @@ bool QHY9::ExposureComplete()
                 return false;
         }
 
+	/* Exposure time */
 	exposure = Exptime / 1000.0;
 	fits_write_key(fptr, TFLOAT, "EXPTIME", &exposure, "Exposure time in seconds", &status);
 
+	/* Date of observation, includes time */
 	dobs = gmtime(&exposure_start.tv_sec);
-	snprintf(dateobs, 32, "%04d-%02d-%02dT%02d:%02d:%02d.%03d",
+	snprintf(obsdata, 32, "%04d-%02d-%02dT%02d:%02d:%02d.%03d",
 		 1900 + dobs->tm_year, 1 + dobs->tm_mon, dobs->tm_mday,
 		 dobs->tm_hour, dobs->tm_min, dobs->tm_sec,
 		 (int) (exposure_start.tv_usec / 1000));
 
-	fits_write_key(fptr, TSTRING, "DATE-OBS", dateobs, "Date of start of observation, UTC", &status);
+	fits_write_key(fptr, TSTRING, "DATE-OBS", obsdata, "Date of start of observation, UTC", &status);
+
+	/* Time of observation for compatibility */
+	snprintf(obsdata, 32, "%02d:%02d:%02d.%03d",
+		 dobs->tm_hour, dobs->tm_min, dobs->tm_sec,
+		 (int) (exposure_start.tv_usec / 1000));
+	fits_write_key(fptr, TSTRING, "TIME-OBS", obsdata, "Time of start of observation, UTC", &status);
+
+	/* CCD Temperature */
+	fits_write_key(fptr, TDOUBLE, "CCDTEMP", &Temperature, "CCD temperature, degC", &status);
+
+	/* Gain */
+	fits_write_key(fptr, TBYTE, "CCDGAIN", &Gain, "CCD Gain, 0..255", &status);
+
+	/* Offset */
+	fits_write_key(fptr, TBYTE, "CCDBIAS", &Offset, "CCD Offset", &status);
 
 	fits_write_img(fptr, TUSHORT, 1, LineSize * VerticalSize, data, &status);
 	if (status)
@@ -165,8 +168,11 @@ bool QHY9::ExposureComplete()
 
 	uploadfile(memptr,memsize);
 	free(memptr);
+#endif
+
 	return true;
 }
+
 
 double QHY9::mv_to_degrees(double mv)
 {
@@ -263,9 +269,11 @@ void QHY9::setCameraRegisters()
 	uint8_t REG[64];
 	unsigned long T;
 	uint8_t time_L, time_M, time_H;
+	int binx;
 
 	/* Compute frame sizes, skips, number of patches, etc according to binning. wth is a "patch" ? */
-	switch (BinX) {
+	binx = PrimaryCCD.getBinX();
+	switch (binx) {
 
 	case 0:
 	case 1:
@@ -315,13 +323,15 @@ void QHY9::setCameraRegisters()
 	SKIP_TOP = 0;
 	SKIP_BOTTOM = 0;
 
+	/* 1 = disable AMP during exposure */
 	AMPVOLTAGE = 1;
 
 	// slowest. 0 - normal and 1 - fast
 	DownloadSpeed = 2;
 
 	/* manual shutter for darks and biases */
-	MechanicalShutterMode = (FrameType == FRAME_TYPE_DARK || FrameType == FRAME_TYPE_BIAS) ? 1 : 0;
+	CCDChip::CCD_FRAME ft = PrimaryCCD.getFrameType();
+	MechanicalShutterMode = (ft == CCDChip::DARK_FRAME || ft == CCDChip::BIAS_FRAME) ? 1 : 0;
 
 	TopSkipNull = 30; // ???
 
@@ -434,6 +444,13 @@ void QHY9::TempControlTimer()
 	static bool alternate = false;	     // first time, read
 	static double voltage = 0.0;
 	static int counter = 0;
+	static int divider = 0;
+
+	if (++divider > 1) {
+		divider = 0;
+		return;
+	}
+
 
 	alternate = !alternate;
 
@@ -442,6 +459,7 @@ void QHY9::TempControlTimer()
 		Temperature = mv_to_degrees(1.024 * voltage);
 	} else {
 
+#if 0
 		if (voltage > degrees_to_mv(TemperatureTarget + 5))
 			TEC_PWM = TEC_PWM + 5;
 		else if (voltage > degrees_to_mv(TemperatureTarget + 1))
@@ -451,6 +469,17 @@ void QHY9::TempControlTimer()
 			TEC_PWM = TEC_PWM - 5;
 		else if (voltage < degrees_to_mv(TemperatureTarget - 1))
 			TEC_PWM = TEC_PWM - 1;
+#else
+
+		if (Temperature > TemperatureTarget + 5)
+			TEC_PWM += 5;
+		else if (Temperature < TemperatureTarget - 5)
+			TEC_PWM -= 5;
+		else if (Temperature > TemperatureTarget + 0.7)
+			TEC_PWM += 1;
+		else if (Temperature < TemperatureTarget - 0.7)
+			TEC_PWM -= 1;
+#endif
 
 		TEC_PWM = clamp_int(TEC_PWM, 0, TEC_PWMLimit * 256 / 100);
 
@@ -467,11 +496,14 @@ void QHY9::TempControlTimer()
 			counter = 0;
 		}
 
-#if 1
+#if 0
 		fprintf(stderr, "volt %.2f, PWM %d, t + 5 %.2f, t + 1 %.2f, t + 0.2 %.2f, t - 5 %.2f, t - 1 %.2f, t - 0.2 %.2f\n",
 			voltage, TEC_PWM,
 			degrees_to_mv(TemperatureTarget + 5), degrees_to_mv(TemperatureTarget + 1), degrees_to_mv(TemperatureTarget + 0.2),
 			degrees_to_mv(TemperatureTarget - 5), degrees_to_mv(TemperatureTarget - 1), degrees_to_mv(TemperatureTarget - 0.2));
+#else
+		fprintf(stderr, "volt %.2f, temp %.2f, target %.2f, PWM %d\n",
+			voltage, Temperature, TemperatureTarget, TEC_PWM);
 #endif
 
 	}

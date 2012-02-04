@@ -28,13 +28,10 @@ public:
 		: QHYCCD(usbdev) { initDefaults(); setDeviceName("QHY9"); }
 	~QHY9() {}
 
+	const char *getDefaultName() { return "QHY9"; }
+
 	void initDefaults();
 
-	/* INDI */
-	bool initProperties();
-	bool updateProperties();
-
-	const char *getDefaultName() { return "QHY9"; }
 
 	int StartExposure(float duration);
 	bool ExposureComplete();

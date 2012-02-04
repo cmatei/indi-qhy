@@ -5,13 +5,9 @@ using namespace std;
 
 void QHYCCD::initDefaults()
 {
+	HasGuideHead = false;
 	HasTemperatureControl = false;
 	HasColorFilterWheel = false;
-
-	TemperatureTarget = 50.0;
-	Temperature = 50.0;
-	TEC_PWM = 0;
-	TEC_PWMLimit = 80;
 }
 
 QHYCCD *QHYCCD::detectCamera()
@@ -114,30 +110,33 @@ int QHYCCD::bulk_transfer_read(uint8_t ep, uint8_t *data, int psize, int pnum, i
 void QHYCCD::TimerHit()
 {
 	struct timeval now;
-	static int counter = 0;
+	unsigned long elapsed, read_wait;
+	int usb_disabled = 0;
 
-	fprintf(stderr, "TIMER !!\n\n");
+	if (!isConnected())
+		return;
 
-	if (isConnected()) {
+	/* delay readout until image is written to RAM */
+	read_wait = Exptime;
+	if (DownloadSpeed == 2 && PrimaryCCD.getBinX() == 1)
+		read_wait += 25 * 1000;
 
-		gettimeofday(&now, NULL);
-		if (exposing && (tv_diff(&now, &exposure_start) >= Exptime)) {
-			exposing = false;
-			ExposureComplete();
-		}
 
-		if (HasTemperatureControl) {
-			/* make this slower, at 2 sec */
+	gettimeofday(&now, NULL);
+	elapsed = tv_diff(&now, &exposure_start);
 
-			counter++;
-			if (counter >= 2) {
-				counter = 0;
-				TempControlTimer();
-			}
-		}
+	if (exposing && elapsed >= Exptime)
+		usb_disabled = 1;
 
-		SetTimer(QHYCCD_TIMER);
+	if (exposing && elapsed >= read_wait) {
+		exposing = false;
+		ExposureComplete();
 	}
+
+	if (HasTemperatureControl && !usb_disabled)
+		TempControlTimer();
+
+	SetTimer(QHYCCD_TIMER);
 }
 
 bool QHYCCD::initProperties()
