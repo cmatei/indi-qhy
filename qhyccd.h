@@ -34,7 +34,10 @@ public:
 	// LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE
 	//static const int QHYCCD_REQUEST_WRITE = 0x40;
 
-        QHYCCD(libusb_device *usbdev) : CCD() { initDefaults(); this->usb_dev = usbdev; }
+        QHYCCD(libusb_device *usbdev) : CCD() {
+		initDefaults();
+		this->usb_dev = usbdev;
+	}
 	~QHYCCD() { Disconnect(); }
 
 	virtual void   initDefaults();

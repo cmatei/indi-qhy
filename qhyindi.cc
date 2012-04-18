@@ -3,75 +3,65 @@
 
 using namespace std;
 
-QHYCCD *camera = NULL;
+static QHYCCD *camera = NULL;
 
-class ErrInitialize { };
-
-void initialize()
+bool initialize()
 {
 	static bool initialized = false;
 
 	if (initialized)
-		return;
+		return initialized;
 
 	if ((camera = QHYCCD::detectCamera()) == NULL)
-		throw ErrInitialize();
+		return initialized;
 
 	initialized = true;
+	return initialized;
 }
 
 
 void ISGetProperties(const char *dev)
 {
-	try {
-		initialize();
+	if (!initialize())
+		return;
 
-		if (dev && strcmp(dev, camera->deviceName()))
-			return;
+	if (dev && strcmp(dev, camera->deviceName()))
+		return;
 
-		camera->ISGetProperties(dev);
-	}
-	catch (ErrInitialize) {
-	}
+	camera->ISGetProperties(dev);
 }
 
 void ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-	try {
-		initialize();
+	if (!initialize())
+		return;
 
-		if (dev && strcmp(dev, camera->deviceName()))
-			return;
+	if (dev && strcmp(dev, camera->deviceName()))
+		return;
 
-		camera->ISNewSwitch(dev, name, states, names, n);
-	} catch (ErrInitialize) {
-	}
+	camera->ISNewSwitch(dev, name, states, names, n);
 }
 
 void ISNewText (const char *dev, const char *name, char *texts[], char *names[], int n)
 {
-	try {
-		initialize();
+	if (!initialize())
+		return;
 
-		if (dev && strcmp(dev, camera->deviceName()))
-			return;
+	if (dev && strcmp(dev, camera->deviceName()))
+		return;
 
-		camera->ISNewText(dev, name, texts, names, n);
-	} catch (ErrInitialize) {
-	}
+	camera->ISNewText(dev, name, texts, names, n);
 }
 
 void ISNewNumber (const char *dev, const char *name, double values[], char *names[], int n)
 {
-	try {
-		initialize();
+	if (!initialize())
+		return;
 
-		if (dev && strcmp(dev, camera->deviceName()))
-			return;
+	if (dev && strcmp(dev, camera->deviceName()))
+		return;
 
-		camera->ISNewNumber(dev, name, values, names, n);
-	} catch (ErrInitialize) {
-	}
+	camera->ISNewNumber(dev, name, values, names, n);
 }
 
 void ISNewBLOB (const char *dev, const char *name, int sizes[], int blobsizes[], char *blobs[], char *formats[], char *names[], int n)

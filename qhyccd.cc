@@ -95,7 +95,7 @@ void QHYCCD::TimerHit()
 	/* delay readout until image is written to RAM */
 	read_wait = Exptime;
 	if (DownloadSpeed == 2 && PrimaryCCD.getBinX() == 1)
-		read_wait += 25 * 1000;
+		read_wait += 16 * 1000;
 
 
 	gettimeofday(&now, NULL);
@@ -116,78 +116,42 @@ void QHYCCD::TimerHit()
 }
 
 
-#if 0
-
-int QHYCCD::vendor_request_read(uint8_t req, uint8_t *data, uint16_t length)
-{
-	return libusb_control_transfer(usb_handle, LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR,
-				       req, 0, 0, data, length, 0);
-}
-
-int QHYCCD::vendor_request_write(uint8_t req, uint8_t *data, uint16_t length)
-{
-	return libusb_control_transfer(usb_handle, LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR,
-				       req, 0, 0, data, length, 0);
-}
-
-int QHYCCD::bulk_transfer_read(uint8_t ep, uint8_t *data, int psize, int pnum, int* pos)
-{
-        int ret, length_transfered;
-        int i;
-
-        for (i = 0; i < pnum; ++i) {
-		length_transfered = 0;
-
-                ret = libusb_bulk_transfer(usb_handle ,ep, data + i * psize, psize, &length_transfered, 0);
-                if (ret < 0 || length_transfered != psize) {
-			fprintf(stderr, "bulk_transfer %d, %d\n", ret, length_transfered);
-			return -1;
-                }
-                *pos = i;
-        }
-
-        return 0;
-}
-
-#endif
-
-
 bool QHYCCD::initProperties()
 {
 	CCD::initProperties();
 
-	/* Temperature control */
+	if (HasTemperatureControl) {
+		/* FIXME: this is ugly, with the 3 groups, but e.g. xephem sends all values in a group when setting, so
+		   trying to avoid overwriting temp setpoint with current temp for instance */
 
-	IDMessage(deviceName(), "initProperties()");
+		TemperatureSetNV = new INumberVectorProperty();
+		IUFillNumber(&TemperatureN[0], "CCD_TEMPERATURE_VALUE", "Temp. Setpoint (degC)", "%4.2f", -50, 50, 0, TemperatureTarget);
+		IUFillNumberVector(TemperatureSetNV, &TemperatureN[0], 1, deviceName(), "CCD_TEMPERATURE", "Temperature", "Main Control", IP_RW, 60, IPS_IDLE);
 
-	/* FIXME: this is ugly, with the 3 groups, but e.g. xephem sends all values in a group when setting, so
-	          trying to avoid overwriting temp setpoint with current temp for instance */
+		TempPWMSetNV = new INumberVectorProperty();
+		IUFillNumber(&TemperatureN[1], "CCD_TEC_PWM_LIMIT_VALUE", "TEC Power limit (%)", "%3.0f", 0, 100, 0, TEC_PWMLimit);
+		IUFillNumberVector(TempPWMSetNV, &TemperatureN[1], 1, deviceName(), "CCD_TEC_PWM_LIMIT", "TEC Power", "Main Control", IP_RW, 60, IPS_IDLE);
 
-	TemperatureSetNV = new INumberVectorProperty();
-	IUFillNumber(&TemperatureN[0], "CCD_TEMPERATURE_VALUE", "Temp. Setpoint (degC)", "%4.2f", -50, 50, 0, TemperatureTarget);
-	IUFillNumberVector(TemperatureSetNV, &TemperatureN[0], 1, deviceName(), "CCD_TEMPERATURE", "Temperature", "Main Control", IP_RW, 60, IPS_IDLE);
+		TemperatureGetNV = new INumberVectorProperty();
+		IUFillNumber(&TemperatureN[2], "CCD_TEMPERATURE_CURRENT_VALUE", "Temperature (degC)", "%4.2f", -50, 50, 0, Temperature);
+		IUFillNumber(&TemperatureN[3], "CCD_TEC_PWM_CURRENT_VALUE", "TEC Power (%)", "%3.0f", 0, 100, 0, TEC_PWM);
+		IUFillNumberVector(TemperatureGetNV, &TemperatureN[2], 2, deviceName(), "CCD_TEMPERATURE_INFO", "Temperature", "Temperature Info", IP_RO, 60, IPS_IDLE);
+	}
 
-	TempPWMSetNV = new INumberVectorProperty();
-	IUFillNumber(&TemperatureN[1], "CCD_TEC_PWM_LIMIT_VALUE", "TEC Power limit (%)", "%3.0f", 0, 100, 0, TEC_PWMLimit);
-	IUFillNumberVector(TempPWMSetNV, &TemperatureN[1], 1, deviceName(), "CCD_TEC_PWM_LIMIT", "TEC Power", "Main Control", IP_RW, 60, IPS_IDLE);
+	if (HasColorFilterWheel) {
 
-	TemperatureGetNV = new INumberVectorProperty();
-	IUFillNumber(&TemperatureN[2], "CCD_TEMPERATURE_CURRENT_VALUE", "Temperature (degC)", "%4.2f", -50, 50, 0, Temperature);
-	IUFillNumber(&TemperatureN[3], "CCD_TEC_PWM_CURRENT_VALUE", "TEC Power (%)", "%3.0f", 0, 100, 0, TEC_PWM);
-	IUFillNumberVector(TemperatureGetNV, &TemperatureN[2], 2, deviceName(), "CCD_TEMPERATURE_INFO", "Temperature", "Temperature Info", IP_RO, 60, IPS_IDLE);
+		CFWSlotNV = new INumberVectorProperty();
+		IUFillNumber(&CFWSlotN[0], "FILTER_SLOT_VALUE", "CFW slot", "%2.0f", 1, 5, 0, CFWSlot);
+		IUFillNumberVector(CFWSlotNV, CFWSlotN, 1, deviceName(), "FILTER_SLOT", "Filter", "Main Control", IP_RW, 60, IPS_IDLE);
 
-	/* CFW */
-	CFWSlotNV = new INumberVectorProperty();
-	IUFillNumber(&CFWSlotN[0], "FILTER_SLOT_VALUE", "CFW slot", "%2.0f", 1, 5, 0, CFWSlot);
-	IUFillNumberVector(CFWSlotNV, CFWSlotN, 1, deviceName(), "FILTER_SLOT", "Filter", "Main Control", IP_RW, 60, IPS_IDLE);
-
-	CFWFilterTV = new ITextVectorProperty();
-	IUFillText(&CFWFilterT[0], "FILTER1", "1", "");
-	IUFillText(&CFWFilterT[1], "FILTER2", "2", "");
-	IUFillText(&CFWFilterT[2], "FILTER3", "3", "");
-	IUFillText(&CFWFilterT[3], "FILTER4", "4", "");
-	IUFillText(&CFWFilterT[4], "FILTER5", "5", "");
-	IUFillTextVector(CFWFilterTV, CFWFilterT, 5, deviceName(), "FILTER_NAME", "Filter", "Filter Wheel", IP_RW, 60, IPS_IDLE);
+		CFWFilterTV = new ITextVectorProperty();
+		IUFillText(&CFWFilterT[0], "FILTER1", "1", "");
+		IUFillText(&CFWFilterT[1], "FILTER2", "2", "");
+		IUFillText(&CFWFilterT[2], "FILTER3", "3", "");
+		IUFillText(&CFWFilterT[3], "FILTER4", "4", "");
+		IUFillText(&CFWFilterT[4], "FILTER5", "5", "");
+		IUFillTextVector(CFWFilterTV, CFWFilterT, 5, deviceName(), "FILTER_NAME", "Filter", "Filter Wheel", IP_RW, 60, IPS_IDLE);
+	}
 
 	return true;
 }
@@ -198,7 +162,6 @@ bool QHYCCD::updateProperties()
 	CCD::updateProperties();
 
 	if (isConnected()) {
-
 		if (HasTemperatureControl) {
 			defineNumber(TemperatureSetNV);
 			defineNumber(TempPWMSetNV);
@@ -282,7 +245,7 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
 bool QHYCCD::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
 	if (dev && !strcmp(dev, deviceName())) {
-	}
+        }
 
 	return CCD::ISNewSwitch(dev, name, states, names, n);
 }

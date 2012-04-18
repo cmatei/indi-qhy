@@ -6,17 +6,8 @@ using namespace std;
 
 void QHY9::initDefaults()
 {
-	QHYCCD::initDefaults();
-
-	HasGuideHead = false;
 	HasTemperatureControl = true;
 	HasColorFilterWheel = true;
-
-	PrimaryCCD.setResolution(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT);
-	PrimaryCCD.setFrame(0, 0, QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT);
-	PrimaryCCD.setBin(1, 1);
-	PrimaryCCD.setPixelSize(5.4, 5.4);
-	PrimaryCCD.setFrameType(CCDChip::LIGHT_FRAME);
 
 	TemperatureTarget = 50.0;
 	Temperature = 50.0;
@@ -33,25 +24,41 @@ void QHY9::initDefaults()
 	SDRAM_MAXSIZE = 100;
 }
 
-#if 0
-
-bool QHY9::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
+bool QHY9::initProperties()
 {
-	return QHYCCD::ISNewSwitch(dev, name, states, names, n);
+	QHYCCD::initProperties();
+
+	IUFillSwitch(&ReadOutS[0], "READOUT_FAST",   "Fast",   ISS_OFF);
+	IUFillSwitch(&ReadOutS[1], "READOUT_NORMAL", "Normal", ISS_OFF);
+	IUFillSwitch(&ReadOutS[2], "READOUT_SLOW",   "Slow",   ISS_ON);
+
+	IUFillSwitchVector(ReadOutSP, ReadOutS, 3, deviceName(),
+			   "READOUT_SPEED", "Readout Speed",
+			   IMAGE_SETTINGS_TAB, IP_WO, ISR_1OFMANY, 0, IPS_IDLE);
+
+	return true;
 }
 
-
-bool QHY9::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
+bool QHY9::updateProperties()
 {
-	return QHYCCD::ISNewNumber(dev, name, values, names, n);
-}
+	QHYCCD::updateProperties();
 
-bool QHY9::ISNewText  (const char *dev, const char *name, char *texts[], char *names[], int n)
-{
-	return QHYCCD::ISNewText(dev, name, texts, names, n);
-}
+	if (isConnected()) {
+		PrimaryCCD.setResolution(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT);
+		PrimaryCCD.setFrame(0, 0, QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT);
+		PrimaryCCD.setBin(1, 1);
+		PrimaryCCD.setPixelSize(5.4, 5.4);
+		PrimaryCCD.setFrameType(CCDChip::LIGHT_FRAME);
+		PrimaryCCD.setBPP(16);
+		PrimaryCCD.setFrameBufferSize(QHY9_SENSOR_WIDTH * QHY9_SENSOR_HEIGHT * 2);
 
-#endif
+		defineSwitch(ReadOutSP);
+	} else {
+		deleteProperty(ReadOutSP->name);
+	}
+
+	return true;
+}
 
 int QHY9::StartExposure(float duration)
 {
@@ -117,7 +124,6 @@ void QHY9::addFITSKeywords(fitsfile *fptr)
 
 	/* Offset */
 	fits_write_key(fptr, TBYTE, "CCDBIAS", &Offset, "CCD Offset", &status);
-
 }
 
 
@@ -253,7 +259,7 @@ void QHY9::setCameraRegisters()
 	AMPVOLTAGE = 1;
 
 	// slowest. 0 - normal and 1 - fast
-	DownloadSpeed = 2;
+	//DownloadSpeed = 2;
 
 	/* manual shutter for darks and biases */
 	CCDChip::CCD_FRAME ft = PrimaryCCD.getFrameType();
@@ -335,7 +341,32 @@ void QHY9::setCameraRegisters()
 
 	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
 				QHY9_REGISTERS_CMD, 0, 0, REG, 64, 0);
-//	vendor_request_write(QHY9_REGISTERS_CMD, REG, 64);
+}
+
+bool QHY9::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
+{
+	if (dev && !strcmp(dev, deviceName())) {
+		if (!strcmp(name, ReadOutSP->name)) {
+			if (IUUpdateSwitch(ReadOutSP, states, names, n) < 0)
+				return false;
+
+			if (ReadOutS[0].s == ISS_ON)
+				DownloadSpeed = 0;
+
+			if (ReadOutS[1].s == ISS_ON)
+				DownloadSpeed = 1;
+
+			if (ReadOutS[2].s == ISS_ON)
+				DownloadSpeed = 2;
+
+                        ReadOutSP->s = IPS_OK;
+			IDSetSwitch(ReadOutSP, NULL);
+
+			fprintf(stderr, "download speed %d\n", DownloadSpeed);
+		}
+        }
+
+	return CCD::ISNewSwitch(dev, name, states, names, n);
 }
 
 void QHY9::beginVideo()

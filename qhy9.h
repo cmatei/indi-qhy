@@ -32,18 +32,29 @@ public:
 	static const int QHY9_INTERRUPT_READ_EP  = 0x81;
 
 	QHY9(libusb_device *usbdev)
-		: QHYCCD(usbdev) { initDefaults(); setDeviceName("QHY9"); }
-	~QHY9() {}
+		: QHYCCD(usbdev) {
+		setDeviceName("QHY9");
+
+		initDefaults();
+		ReadOutSP = new ISwitchVectorProperty;
+	}
+	~QHY9() {
+		delete ReadOutSP;
+	}
 
 	const char *getDefaultName() { return "QHY9"; }
 
+	virtual bool initProperties();
+	virtual bool updateProperties();
+
 	void initDefaults();
+
 
 	int StartExposure(float duration);
 
-//	bool ExposureComplete();
-
 	void addFITSKeywords(fitsfile *fptr);
+
+	bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n);
 
 protected:
 
@@ -51,6 +62,11 @@ protected:
 	void SetCFWSlot(int slot);
 
 private:
+
+	// readout speed
+	ISwitch ReadOutS[3];
+	ISwitchVectorProperty *ReadOutSP;
+
 
 	double mv_to_degrees(double mv);
 	double degrees_to_mv(double degrees);
