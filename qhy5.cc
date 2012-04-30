@@ -18,27 +18,11 @@ static const int gain_map[] = {
 static const int gain_map_size = (sizeof(gain_map) / sizeof(int));
 
 
-void QHY5::initDefaults()
+void QHY5::initCamera()
 {
-	QHYCCD::initDefaults();
-
-	HasGuideHead = false;
-	HasTemperatureControl = false;
-	HasColorFilterWheel = false;
 	HasSt4Port = true;
 
-	PrimaryCCD.setResolution(QHY5_SENSOR_WIDTH, QHY5_SENSOR_HEIGHT);
-	PrimaryCCD.setFrame(0, 0, QHY5_SENSOR_WIDTH, QHY5_SENSOR_HEIGHT);
-	PrimaryCCD.setBin(1, 1);
-	PrimaryCCD.setPixelSize(5.2, 5.2);
-	PrimaryCCD.setFrameType(CCDChip::LIGHT_FRAME);
-
-	/* QHY5 specific */
-//	Gain = 20;
-//	Offset = 120;
-//	MechanicalShutterMode = 0;
-//	DownloadCloseTEC = 1;
-//	SDRAM_MAXSIZE = 100;
+	SetCCDParams(QHY5_SENSOR_WIDTH, QHY5_SENSOR_HEIGHT, 8, 5.2, 5.2);
 }
 
 

@@ -27,39 +27,38 @@ public:
 	static const int QHY9_VERSION_CMD     = 0xC2;
 	static const int QHY9_SHUTTER_CMD     = 0xC7;
 
-	static const int QHY9_DATA_BULK_EP = 0x86;
+	static const int QHY9_DATA_BULK_EP       = 0x86;
 	static const int QHY9_INTERRUPT_WRITE_EP = 0x01;
 	static const int QHY9_INTERRUPT_READ_EP  = 0x81;
 
-	QHY9(libusb_device *usbdev)
-		: QHYCCD(usbdev) {
-		setDeviceName("QHY9");
-
-		initDefaults();
+	QHY9(libusb_device *usbdev) : QHYCCD(usbdev) {
+		initCamera();
 		ReadOutSP = new ISwitchVectorProperty;
 	}
-	~QHY9() {
-		delete ReadOutSP;
-	}
+
+	~QHY9() { delete ReadOutSP; }
 
 	const char *getDefaultName() { return "QHY9"; }
 
-	virtual bool initProperties();
-	virtual bool updateProperties();
+	void initCamera();
 
-	void initDefaults();
-
+	bool initProperties();
+	bool updateProperties();
 
 	int StartExposure(float duration);
+	bool ExposureComplete();
 
 	void addFITSKeywords(fitsfile *fptr);
 
 	bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n);
 
+	bool SetFilterNames();
+	bool SelectFilter(int i);
+	int  QueryFilter();
+
 protected:
 
 	void TempControlTimer();
-	void SetCFWSlot(int slot);
 
 private:
 

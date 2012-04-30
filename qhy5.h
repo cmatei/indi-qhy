@@ -18,13 +18,12 @@ public:
 	static const int QHY5_INTERRUPT_WRITE_EP = 0x01;
 	static const int QHY5_INTERRUPT_READ_EP  = 0x81;
 
-	QHY5(libusb_device *usbdev)
-		: QHYCCD(usbdev) { initDefaults(); setDeviceName("QHY5"); }
+        QHY5(libusb_device *usbdev) : QHYCCD(usbdev) { initCamera(); }
 	~QHY5() {}
 
 	const char *getDefaultName() { return "QHY5"; }
 
-	void initDefaults();
+	void initCamera();
 
 	int StartExposure(float duration);
 

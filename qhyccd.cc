@@ -4,14 +4,6 @@
 
 using namespace std;
 
-void QHYCCD::initDefaults()
-{
-	HasGuideHead = false;
-	HasTemperatureControl = false;
-	HasColorFilterWheel = false;
-	HasSt4Port = false;
-}
-
 QHYCCD *QHYCCD::detectCamera()
 {
 	static bool libusb_initialized = false;
@@ -57,6 +49,7 @@ QHYCCD *QHYCCD::detectCamera()
 
 	return camera;
 }
+
 
 bool QHYCCD::Connect()
 {
@@ -115,10 +108,38 @@ void QHYCCD::TimerHit()
 	SetTimer(QHYCCD_TIMER);
 }
 
+bool QHYCCD::GetFilterNames(const char *deviceName, const char *groupName)
+{
+	char filterName[MAXINDINAME];
+	char filterLabel[MAXINDILABEL];
+	int i;
+
+	if (FilterNameT != NULL)
+		delete FilterNameT;
+
+	FilterNameT = new IText[MaxFilter];
+
+	for (i = 0; i < MaxFilter; i++) {
+		snprintf(filterName, MAXINDINAME, "FILTER_SLOT_NAME_%d", i+1);
+		snprintf(filterLabel, MAXINDILABEL, "Filter #%d", i+1);
+		IUFillText(&FilterNameT[i], filterName, filterLabel, filterDesignation[i].c_str());
+	}
+
+	IUFillTextVector(FilterNameTP, FilterNameT, MaxFilter, deviceName, "FILTER_NAME", "Filter", groupName, IP_RW, 1, IPS_IDLE);
+
+	return true;
+}
+
 
 bool QHYCCD::initProperties()
 {
-	CCD::initProperties();
+	INDI::CCD::initProperties();
+
+
+	if (HasFilterWheel) {
+		initFilterProperties(deviceName(), FILTER_TAB);
+		GetFilterNames(deviceName(), FILTER_TAB);
+	}
 
 	if (HasTemperatureControl) {
 		/* FIXME: this is ugly, with the 3 groups, but e.g. xephem sends all values in a group when setting, so
@@ -138,28 +159,13 @@ bool QHYCCD::initProperties()
 		IUFillNumberVector(TemperatureGetNV, &TemperatureN[2], 2, deviceName(), "CCD_TEMPERATURE_INFO", "Temperature", "Temperature Info", IP_RO, 60, IPS_IDLE);
 	}
 
-	if (HasColorFilterWheel) {
-
-		CFWSlotNV = new INumberVectorProperty();
-		IUFillNumber(&CFWSlotN[0], "FILTER_SLOT_VALUE", "CFW slot", "%2.0f", 1, 5, 0, CFWSlot);
-		IUFillNumberVector(CFWSlotNV, CFWSlotN, 1, deviceName(), "FILTER_SLOT", "Filter", "Main Control", IP_RW, 60, IPS_IDLE);
-
-		CFWFilterTV = new ITextVectorProperty();
-		IUFillText(&CFWFilterT[0], "FILTER1", "1", "");
-		IUFillText(&CFWFilterT[1], "FILTER2", "2", "");
-		IUFillText(&CFWFilterT[2], "FILTER3", "3", "");
-		IUFillText(&CFWFilterT[3], "FILTER4", "4", "");
-		IUFillText(&CFWFilterT[4], "FILTER5", "5", "");
-		IUFillTextVector(CFWFilterTV, CFWFilterT, 5, deviceName(), "FILTER_NAME", "Filter", "Filter Wheel", IP_RW, 60, IPS_IDLE);
-	}
-
 	return true;
 }
 
 
 bool QHYCCD::updateProperties()
 {
-	CCD::updateProperties();
+	INDI::CCD::updateProperties();
 
 	if (isConnected()) {
 		if (HasTemperatureControl) {
@@ -168,11 +174,10 @@ bool QHYCCD::updateProperties()
 			defineNumber(TemperatureGetNV);
 		}
 
-		if (HasColorFilterWheel) {
-			defineNumber(CFWSlotNV);
-			defineText(CFWFilterTV);
+		if (HasFilterWheel) {
+			defineText(FilterNameTP);
+			defineNumber(FilterSlotNP);
 		}
-
 	} else {
 		if (HasTemperatureControl) {
 			deleteProperty(TemperatureSetNV->name);
@@ -180,19 +185,77 @@ bool QHYCCD::updateProperties()
 			deleteProperty(TemperatureGetNV->name);
 		}
 
-		if (HasTemperatureControl) {
-			deleteProperty(CFWSlotNV->name);
-			deleteProperty(CFWFilterTV->name);
+		if (HasFilterWheel) {
+			deleteProperty(FilterNameTP->name);
+			deleteProperty(FilterSlotNP->name);
 		}
 	}
 
 	return true;
 }
 
+void QHYCCD::addFITSKeywords(fitsfile *fptr)
+{
+		static char obsdata[128];
+	float exposure;
+	struct tm *dobs;
+	int status = 0;
+
+	/* Date of observation, includes time */
+	dobs = gmtime(&exposure_start.tv_sec);
+	snprintf(obsdata, 32, "%04d-%02d-%02dT%02d:%02d:%02d.%03d",
+		 1900 + dobs->tm_year, 1 + dobs->tm_mon, dobs->tm_mday,
+		 dobs->tm_hour, dobs->tm_min, dobs->tm_sec,
+		 (int) (exposure_start.tv_usec / 1000));
+
+	fits_write_key(fptr, TSTRING, "DATE-OBS", obsdata, "Date of start of observation, UTC", &status);
+
+	/* Time of observation for compatibility */
+	snprintf(obsdata, 32, "%02d:%02d:%02d.%03d",
+		 dobs->tm_hour, dobs->tm_min, dobs->tm_sec,
+		 (int) (exposure_start.tv_usec / 1000));
+	fits_write_key(fptr, TSTRING, "TIME-OBS", obsdata, "Time of start of observation, UTC", &status);
+
+	/* Exposure time */
+	exposure = Exptime / 1000.0;
+	fits_write_key(fptr, TFLOAT, "EXPTIME", &exposure, "Exposure time in seconds", &status);
+
+	/* Binning */
+	fits_write_key(fptr, TBYTE, "CCDBIN1", &HBIN, "CCD BIN X", &status);
+	fits_write_key(fptr, TBYTE, "CCDBIN2", &VBIN, "CCD BIN Y", &status);
+
+	/* Gain */
+	fits_write_key(fptr, TBYTE, "QHYGAIN", &Gain, "CCD Gain, 0..255", &status);
+
+	/* Offset */
+	fits_write_key(fptr, TBYTE, "QHYBIAS", &Offset, "CCD Offset", &status);
+
+	/* Readout speed */
+	fits_write_key(fptr, TBYTE, "QHYSPEED", &DownloadSpeed, "CCD readout speed", &status);
+
+	/* CLAMP */
+	fits_write_key(fptr, TBYTE, "QHYCLAMP", &CLAMP, "CCD clamp, on/off", &status);
+
+
+	/* CCD Temperature */
+	if (HasTemperatureControl) {
+		fits_write_key(fptr, TDOUBLE, "CCDTEMP", &Temperature, "CCD temperature, degC", &status);
+		fits_write_key(fptr, TDOUBLE, "CCDTSET", &TemperatureTarget, "CCD set temperature, degC", &status);
+	}
+
+	/* Filters */
+	if (HasFilterWheel) {
+		fits_write_key(fptr, TSTRING, "FILTER01", &filterDesignation[CurrentFilter], "Filter name", &status);
+		fits_write_key(fptr, TINT, "FLT-SLOT", &CurrentFilter, "Filter slot", &status);
+	}
+
+}
+
 
 bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
 {
 	double v;
+	INumber *np;
 
 	fprintf(stderr, "ISNEWNUMBER dev %s, device %s, name %s\n\n", dev, deviceName(), name);
 	if (dev && !strcmp(dev, deviceName())) {
@@ -222,18 +285,30 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
 			return true;
 		}
 
-		if (HasColorFilterWheel && !strcmp(name, "FILTER_SLOT")) {
-			if (n < 1) return false;
+		if (HasFilterWheel && !strcmp(name, FilterSlotNP->name)) {
+			TargetFilter = values[0];
 
-			v = clamp_double(values[0], 1, 5);
+			np = IUFindNumber(FilterSlotNP, names[0]);
 
-			CFWSlot = v;
-			CFWSlotN[0].value = v;
-			CFWSlotNV->s = IPS_OK;
+			if (!np) {
+				FilterSlotNP->s = IPS_ALERT;
+				IDSetNumber(FilterSlotNP, "Unknown error. %s is not a member of %s property.", names[0], name);
+				return false;
+			}
 
-			SetCFWSlot(CFWSlot - 1);
+			if (TargetFilter < MinFilter || TargetFilter > MaxFilter) {
+				FilterSlotNP->s = IPS_ALERT;
+				IDSetNumber(FilterSlotNP, "Error: valid range of filter is from %d to %d", MinFilter, MaxFilter);
+				return false;
+			}
 
-			IDSetNumber(CFWSlotNV, NULL);
+			IUUpdateNumber(FilterSlotNP, values, names, n);
+
+			SelectFilter(TargetFilter);
+
+			FilterSlotN[0].value = TargetFilter;
+			FilterSlotNP->s = IPS_OK;
+			IDSetNumber(FilterSlotNP, "Setting current filter to slot %d", TargetFilter);
 
 			return true;
 		}
@@ -252,15 +327,30 @@ bool QHYCCD::ISNewSwitch(const char *dev, const char *name, ISState *states, cha
 
 bool QHYCCD::ISNewText (const char *dev, const char *name, char *texts[], char *names[], int n)
 {
-#if 0
-	IUFillText(&CFWFilterT[0], "FILTER1", "1", "");
-	IUFillText(&CFWFilterT[1], "FILTER2", "2", "");
-	IUFillText(&CFWFilterT[2], "FILTER3", "3", "");
-	IUFillText(&CFWFilterT[3], "FILTER4", "4", "");
-	IUFillText(&CFWFilterT[4], "FILTER5", "5", "");
-#endif
+	int i;
 
 	if (dev && !strcmp(dev, deviceName())) {
+		if (!strcmp(name, FilterNameTP->name)) {
+			if (IUUpdateText(FilterNameTP, texts, names, n) < 0) {
+				FilterNameTP->s = IPS_ALERT;
+				IDSetText(FilterNameTP, "Error updating names. XML corrupted.");
+				return false;
+			}
+
+			for (i=0; i < MaxFilter; i++)
+				filterDesignation[i] = FilterNameT[i].text;
+
+			if (SetFilterNames() == true) {
+				FilterNameTP->s = IPS_OK;
+				IDSetText(FilterNameTP, NULL);
+				return true;
+			} else {
+				FilterNameTP->s = IPS_ALERT;
+				IDSetText(FilterNameTP, "Error updating filter names.");
+				return false;
+			}
+
+		}
 	}
 
 	return CCD::ISNewText(dev, name, texts, names, n);

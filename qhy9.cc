@@ -4,30 +4,36 @@
 
 using namespace std;
 
-void QHY9::initDefaults()
+void QHY9::initCamera()
 {
+	fprintf(stderr, "QHY9 INIT CAMERA\n");
 	HasTemperatureControl = true;
-	HasColorFilterWheel = true;
+	HasFilterWheel = true;
 
 	TemperatureTarget = 50.0;
 	Temperature = 50.0;
 	TEC_PWM = 0;
 	TEC_PWMLimit = 80;
 
-	CFWSlot = 1;
-
-	/* QHY9 specific */
 	Gain = 20;
 	Offset = 120;
 	MechanicalShutterMode = 0;
 	DownloadCloseTEC = 1;
 	SDRAM_MAXSIZE = 100;
+
+	SetCCDParams(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT, 16, 5.4, 5.4);
+
+	MinFilter = 1;
+	MaxFilter = 5;
+	CurrentFilter = 1;
+	TargetFilter = 1;
 }
 
 bool QHY9::initProperties()
 {
 	QHYCCD::initProperties();
 
+	/* Readout speed */
 	IUFillSwitch(&ReadOutS[0], "READOUT_FAST",   "Fast",   ISS_OFF);
 	IUFillSwitch(&ReadOutS[1], "READOUT_NORMAL", "Normal", ISS_OFF);
 	IUFillSwitch(&ReadOutS[2], "READOUT_SLOW",   "Slow",   ISS_ON);
@@ -35,6 +41,8 @@ bool QHY9::initProperties()
 	IUFillSwitchVector(ReadOutSP, ReadOutS, 3, deviceName(),
 			   "READOUT_SPEED", "Readout Speed",
 			   IMAGE_SETTINGS_TAB, IP_WO, ISR_1OFMANY, 0, IPS_IDLE);
+
+	GetFilterNames(deviceName(), FILTER_TAB);
 
 	return true;
 }
@@ -44,17 +52,20 @@ bool QHY9::updateProperties()
 	QHYCCD::updateProperties();
 
 	if (isConnected()) {
-		PrimaryCCD.setResolution(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT);
-		PrimaryCCD.setFrame(0, 0, QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT);
-		PrimaryCCD.setBin(1, 1);
-		PrimaryCCD.setPixelSize(5.4, 5.4);
-		PrimaryCCD.setFrameType(CCDChip::LIGHT_FRAME);
-		PrimaryCCD.setBPP(16);
-		PrimaryCCD.setFrameBufferSize(QHY9_SENSOR_WIDTH * QHY9_SENSOR_HEIGHT * 2);
-
 		defineSwitch(ReadOutSP);
+
+		if (FilterNameT != NULL) {
+			defineText(FilterNameTP);
+			defineNumber(FilterSlotNP);
+		}
+
 	} else {
 		deleteProperty(ReadOutSP->name);
+
+		if (FilterNameT != NULL) {
+			deleteProperty(FilterNameTP->name);
+			deleteProperty(FilterSlotNP->name);
+		}
 	}
 
 	return true;
@@ -89,41 +100,17 @@ int QHY9::StartExposure(float duration)
 	return 0;
 }
 
+bool QHY9::ExposureComplete()
+{
+	return false;
+}
 
 void QHY9::addFITSKeywords(fitsfile *fptr)
 {
-	static char obsdata[128];
-	float exposure;
-	struct tm *dobs;
-	int status = 0;
+//	int status = 0;
 
-	/* Exposure time */
-	exposure = Exptime / 1000.0;
-	fits_write_key(fptr, TFLOAT, "EXPTIME", &exposure, "Exposure time in seconds", &status);
+	QHYCCD::addFITSKeywords(fptr);
 
-	/* Date of observation, includes time */
-	dobs = gmtime(&exposure_start.tv_sec);
-	snprintf(obsdata, 32, "%04d-%02d-%02dT%02d:%02d:%02d.%03d",
-		 1900 + dobs->tm_year, 1 + dobs->tm_mon, dobs->tm_mday,
-		 dobs->tm_hour, dobs->tm_min, dobs->tm_sec,
-		 (int) (exposure_start.tv_usec / 1000));
-
-	fits_write_key(fptr, TSTRING, "DATE-OBS", obsdata, "Date of start of observation, UTC", &status);
-
-	/* Time of observation for compatibility */
-	snprintf(obsdata, 32, "%02d:%02d:%02d.%03d",
-		 dobs->tm_hour, dobs->tm_min, dobs->tm_sec,
-		 (int) (exposure_start.tv_usec / 1000));
-	fits_write_key(fptr, TSTRING, "TIME-OBS", obsdata, "Time of start of observation, UTC", &status);
-
-	/* CCD Temperature */
-	fits_write_key(fptr, TDOUBLE, "CCDTEMP", &Temperature, "CCD temperature, degC", &status);
-
-	/* Gain */
-	fits_write_key(fptr, TBYTE, "CCDGAIN", &Gain, "CCD Gain, 0..255", &status);
-
-	/* Offset */
-	fits_write_key(fptr, TBYTE, "CCDBIAS", &Offset, "CCD Offset", &status);
 }
 
 
@@ -172,7 +159,7 @@ int QHY9::getDC201Interrupt()
 	unsigned char buffer[4] = { 0, 0, 0, 0 };
 	int transferred;
 
-	/* FIXME: WTF ?! A bulk transfer works, an interrupt_transfer doesn't ?!?! */
+	/* FIXME: A bulk transfer works, an interrupt_transfer doesn't ?!?! */
 	libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_READ_EP, buffer, 4, &transferred, 0);
 
 	//fprintf(stderr, "inte: %02x %02x %02x %02x\n", buffer[0], buffer[1], buffer[2], buffer[3]);
@@ -190,7 +177,7 @@ void QHY9::setDC201Interrupt(uint8_t PWM, uint8_t FAN)
 	buffer[1] = PWM;
 	buffer[2] = FAN;
 
-	/* FIXME: WTF ?! A bulk transfer works, an interrupt_transfer doesn't ?!?! */
+	/* FIXME: A bulk transfer works, an interrupt_transfer doesn't ?!?! */
 	libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_WRITE_EP, buffer, 3, &transferred, 0);
 
 	//fprintf(stderr, "setdc201: write %d, transferred %d\n", r, transferred);
@@ -269,7 +256,7 @@ void QHY9::setCameraRegisters()
 
 	SDRAM_MAXSIZE = 100;
 
-	// CLAMP ?!
+	// FIXME: CLAMP should be an option ?!
 	CLAMP = 0; // 1 also
 
 	/* fill in register buffer */
@@ -395,17 +382,38 @@ void QHY9::setShutter(int mode)
 				QHY9_SHUTTER_CMD, 0, 0, buffer, 1, 0);
 }
 
-void QHY9::SetCFWSlot(int slot)
+
+
+bool QHY9::SetFilterNames()
+{
+	return true;
+
+}
+
+bool QHY9::SelectFilter(int slot)
 {
 	uint8_t buffer[2];
 
-	buffer[0] = 0x5A;
-	buffer[1] = clamp_int(slot, 0, 4);
+	slot = clamp_int(slot - 1, 0, 4);
 
-	fprintf(stderr, "FILTER: slot %d\n\n\n\n", buffer[1]);
+	buffer[0] = 0x5A;
+	buffer[1] = slot;
+
+	fprintf(stderr, "FILTER: slot %d\n\n\n\n", slot + 1);
 
 	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
 				QHY9_CFW_CMD, 0, 0, buffer, 2, 0);
+
+	CurrentFilter = slot + 1;
+
+	SelectFilterDone(CurrentFilter);
+
+	return true;
+}
+
+int QHY9::QueryFilter()
+{
+	return CurrentFilter;
 }
 
 /* FIXME: This needs some TLC, this "regulator" oscillates and swings +/- 1.5 deg */

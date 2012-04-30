@@ -1,31 +1,22 @@
 
 #include "qhyccd.h"
 
-using namespace std;
-
 static QHYCCD *camera = NULL;
 
-bool initialize()
+void initialize()
 {
-	static bool initialized = false;
+	if (camera)
+		return;
 
-	if (initialized)
-		return initialized;
-
-	if ((camera = QHYCCD::detectCamera()) == NULL)
-		return initialized;
-
-	initialized = true;
-	return initialized;
+	camera = QHYCCD::detectCamera();
 }
 
 
 void ISGetProperties(const char *dev)
 {
-	if (!initialize())
-		return;
+	initialize();
 
-	if (dev && strcmp(dev, camera->deviceName()))
+	if (!camera || (dev && strcmp(dev, camera->deviceName())))
 		return;
 
 	camera->ISGetProperties(dev);
@@ -33,10 +24,9 @@ void ISGetProperties(const char *dev)
 
 void ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-	if (!initialize())
-		return;
+	initialize();
 
-	if (dev && strcmp(dev, camera->deviceName()))
+	if (!camera || (dev && strcmp(dev, camera->deviceName())))
 		return;
 
 	camera->ISNewSwitch(dev, name, states, names, n);
@@ -44,10 +34,9 @@ void ISNewSwitch(const char *dev, const char *name, ISState *states, char *names
 
 void ISNewText (const char *dev, const char *name, char *texts[], char *names[], int n)
 {
-	if (!initialize())
-		return;
+	initialize();
 
-	if (dev && strcmp(dev, camera->deviceName()))
+	if (!camera || (dev && strcmp(dev, camera->deviceName())))
 		return;
 
 	camera->ISNewText(dev, name, texts, names, n);
@@ -55,10 +44,9 @@ void ISNewText (const char *dev, const char *name, char *texts[], char *names[],
 
 void ISNewNumber (const char *dev, const char *name, double values[], char *names[], int n)
 {
-	if (!initialize())
-		return;
+	initialize();
 
-	if (dev && strcmp(dev, camera->deviceName()))
+	if (!camera || (dev && strcmp(dev, camera->deviceName())))
 		return;
 
 	camera->ISNewNumber(dev, name, values, names, n);

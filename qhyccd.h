@@ -14,6 +14,7 @@
 #include <indicom.h>
 #include <defaultdriver.h>
 #include <indiccd.h>
+#include <indifilterinterface.h>
 #include <base64.h>
 
 #include <libusb-1.0/libusb.h>
@@ -23,24 +24,23 @@
 
 #define QHYCCD_TIMER (1 * 1000)
 
-class QHYCCD : public INDI::CCD
+#define QHYCCD_MAX_FILTERS 5
+
+class QHYCCD : public INDI::CCD, public INDI::FilterInterface
 {
 public:
 	static QHYCCD *detectCamera();
 
-	// LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE
-	//static const int QHYCCD_REQUEST_READ  = 0xC0;
-
-	// LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE
-	//static const int QHYCCD_REQUEST_WRITE = 0x40;
-
-        QHYCCD(libusb_device *usbdev) : CCD() {
-		initDefaults();
+        QHYCCD(libusb_device *usbdev) {
 		this->usb_dev = usbdev;
-	}
-	~QHYCCD() { Disconnect(); }
 
-	virtual void   initDefaults();
+		HasTemperatureControl = false;
+		HasGuideHead = false;
+		HasSt4Port = false;
+		HasFilterWheel = false;
+	}
+
+	~QHYCCD() { Disconnect(); }
 
 	/* INDI stuff */
 	bool Connect();
@@ -53,18 +53,21 @@ public:
 	bool initProperties();
 	bool updateProperties();
 
-//	bool ExposureComplete();
+	virtual void addFITSKeywords(fitsfile *fptr);
+
+	/* Not all cameras have CFW interface */
+	virtual bool GetFilterNames(const char *deviceName, const char *groupName);
+	virtual bool SetFilterNames() { return false; }
+	virtual bool SelectFilter(int i) { return false; }
+	virtual int QueryFilter() { return 0; }
+
 
 protected:
+	bool HasFilterWheel;
+	std::string filterDesignation[QHYCCD_MAX_FILTERS];
+
 	virtual void TempControlTimer() {}
 	void   TimerHit();
-
-	virtual void SetCFWSlot(int slot) { }
-
-//	int vendor_request_read(uint8_t req, uint8_t *data, uint16_t length);
-//	int vendor_request_write(uint8_t req, uint8_t *data, uint16_t length);
-
-//	int bulk_transfer_read(uint8_t ep, uint8_t *data, int p_size, int p_num, int* pos);
 
 	bool                  usb_connected;
 	libusb_device        *usb_dev;	         /* USB device address */
@@ -75,8 +78,8 @@ protected:
 
 	/* Temperature control */
 	bool    HasTemperatureControl;
-	double  TemperatureTarget;		 /* in degC */
-	double  Temperature;		         /* in degC */
+	double  TemperatureTarget;		 /* temperature setpoint in degC */
+	double  Temperature;		         /* current temperature in degC */
 	int     TEC_PWMLimit;		         /* 0..100, TEC power limit */
 	int     TEC_PWM;		         /* current TEC power */
 	INumber TemperatureN[4];
@@ -85,15 +88,6 @@ protected:
 	INumberVectorProperty *TempPWMSetNV;      /* PWM limit */
 	INumberVectorProperty *TemperatureGetNV;  /* R/O, current temp and PWM */
 
-
-	/* CFW */
-	bool    HasColorFilterWheel;
-	int     CFWSlot;		         /* CFW slot */
-	INumber CFWSlotN[1];
-	INumberVectorProperty *CFWSlotNV;
-
-	IText   CFWFilterT[5];
-	ITextVectorProperty *CFWFilterTV;
 
 	/* QHY Camera Settings */
 	unsigned char Gain;
