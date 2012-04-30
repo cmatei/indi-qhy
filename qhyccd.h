@@ -61,6 +61,7 @@ public:
 	virtual bool SelectFilter(int i) { return false; }
 	virtual int QueryFilter() { return 0; }
 
+	int bulk_transfer_read(int ep, unsigned char *data, int psize, int pnum, int *pos);
 
 protected:
 	bool HasFilterWheel;

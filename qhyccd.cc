@@ -76,6 +76,8 @@ bool QHYCCD::Disconnect()
 	return true;
 }
 
+
+
 void QHYCCD::TimerHit()
 {
 	struct timeval now;
@@ -245,7 +247,9 @@ void QHYCCD::addFITSKeywords(fitsfile *fptr)
 
 	/* Filters */
 	if (HasFilterWheel) {
-		fits_write_key(fptr, TSTRING, "FILTER01", &filterDesignation[CurrentFilter], "Filter name", &status);
+		void *fname = (void *) filterDesignation[CurrentFilter - 1].c_str();
+
+		fits_write_key(fptr, TSTRING, "FILTER01", fname, "Filter name", &status);
 		fits_write_key(fptr, TINT, "FLT-SLOT", &CurrentFilter, "Filter slot", &status);
 	}
 
@@ -356,3 +360,21 @@ bool QHYCCD::ISNewText (const char *dev, const char *name, char *texts[], char *
 	return CCD::ISNewText(dev, name, texts, names, n);
 }
 
+int QHYCCD::bulk_transfer_read(int ep, unsigned char *data, int psize, int pnum, int *pos)
+{
+	int ret, length_transfered;
+        int i;
+
+        for (i = 0; i < pnum; ++i) {
+                length_transfered = 0;
+
+                ret = libusb_bulk_transfer(usb_handle ,ep, data + i * psize, psize, &length_transfered, 0);
+                if (ret < 0 || length_transfered != psize) {
+                        fprintf(stderr, "bulk_transfer %d, %d\n", ret, length_transfered);
+                        return -1;
+                }
+                *pos = i;
+        }
+
+        return 0;
+}

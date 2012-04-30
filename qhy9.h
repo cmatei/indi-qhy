@@ -80,6 +80,7 @@ private:
 
 	void setShutter(int mode);
 
+	uint8_t *downloadFrame();
 };
 
 #endif
