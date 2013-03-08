@@ -9,6 +9,7 @@ void QHY9::initCamera()
 	fprintf(stderr, "QHY9 INIT CAMERA\n");
 	HasTemperatureControl = true;
 	HasFilterWheel = true;
+	HasGuideHead = false;
 
 	TemperatureTarget = 50.0;
 	Temperature = 50.0;
@@ -75,7 +76,7 @@ int QHY9::StartExposure(float duration)
 {
 	CCDChip::CCD_FRAME type;
 
-	if (exposing)
+	if (InExposure)
 		return -1;
 
 	type = PrimaryCCD.getFrameType();
@@ -98,13 +99,23 @@ int QHY9::StartExposure(float duration)
 		usleep(500*1000);		     // shutter speed is 1/10 to 1/2 sec
 	}
 
-	exposing = true;
+	InExposure = true;
 	gettimeofday(&exposure_start, NULL);
 
 	beginVideo();
 
 	// 0 - exp. running on timers, 1 short exposures already done,  -1 error
 	return 0;
+}
+
+bool QHY9::AbortExposure()
+{
+	if (!InExposure)
+		return true;
+
+	abortVideo();
+
+	return true;
 }
 
 
@@ -378,7 +389,34 @@ void QHY9::beginVideo()
 
 void QHY9::abortVideo()
 {
+	uint8_t buffer[1] = { 0xff };
+	int transferred;
+
+	libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_WRITE_EP, buffer, 1, &transferred, 0);
+
+	// ?? setShutter(SHUTTER_FREE);
 #if 0
+
+void __stdcall sendForceStop(PCHAR devname){
+unsigned char Buffer[1];
+Buffer[0]=0;
+
+
+
+sendInterrupt(devname,1,Buffer);
+
+}
+
+void __stdcall sendAbortCapture(PCHAR devname){
+unsigned char Buffer[1];
+Buffer[0]=0xff;
+
+
+
+sendInterrupt(devname,1,Buffer);
+
+}
+
 	/* FIXME: UNCHECKED IN DOCS !! */
 	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
 				QHY9_ABORT_VIDEO_CMD, 0, 0,

@@ -43,15 +43,15 @@ public:
 	~QHYCCD() { Disconnect(); }
 
 	/* INDI stuff */
-	bool Connect();
-	bool Disconnect();
+	virtual bool Connect();
+	virtual bool Disconnect();
 
-	bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n);
-	bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n);
-	bool ISNewText (const char *dev, const char *name, char *texts[], char *names[], int n);
+	virtual bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n);
+	virtual bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n);
+	virtual bool ISNewText (const char *dev, const char *name, char *texts[], char *names[], int n);
 
-	bool initProperties();
-	bool updateProperties();
+	virtual bool initProperties();
+	virtual bool updateProperties();
 
 	virtual const char *deviceName() = 0;
 
@@ -64,9 +64,8 @@ public:
 	virtual bool SelectFilter(int i) { return false; }
 	virtual int QueryFilter() { return 0; }
 
-	int bulk_transfer_read(int ep, unsigned char *data, int psize, int pnum, int *pos);
-
 protected:
+
 	bool HasFilterWheel;
 	std::string filterDesignation[QHYCCD_MAX_FILTERS];
 
@@ -127,6 +126,8 @@ protected:
 	int p_size;
 	int patchnum;
 	int total_p;
+
+	int bulk_transfer_read(int ep, unsigned char *data, int psize, int pnum, int *pos);
 };
 
 

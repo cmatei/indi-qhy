@@ -48,6 +48,8 @@ public:
 	bool updateProperties();
 
 	int StartExposure(float duration);
+	bool AbortExposure();
+
 	bool GrabExposure();
 
 	bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n);
