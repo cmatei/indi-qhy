@@ -48,16 +48,13 @@ public:
 	bool updateProperties();
 
 	int StartExposure(float duration);
-	bool ExposureComplete();
-
-	void addFITSKeywords(fitsfile *fptr);
+	bool GrabExposure();
 
 	bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n);
 
 	bool SetFilterNames();
 	bool SelectFilter(int i);
 	int  QueryFilter();
-//	bool GetFilterNames(const char *group);
 
 protected:
 

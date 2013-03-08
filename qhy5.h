@@ -28,6 +28,8 @@ public:
 
 	int StartExposure(float duration);
 
+	bool GrabExposure();
+
 private:
 	void setCameraRegisters();
 

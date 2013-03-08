@@ -101,7 +101,7 @@ void QHYCCD::TimerHit()
 
 	if (exposing && elapsed >= read_wait) {
 		exposing = false;
-		ExposureComplete();
+		GrabExposure();
 	}
 
 	if (HasTemperatureControl && !usb_disabled)
@@ -178,7 +178,7 @@ bool QHYCCD::updateProperties()
 
 		if (HasFilterWheel) {
 			defineText(FilterNameTP);
-			defineNumber(FilterSlotNP);
+			defineNumber(&FilterSlotNP);
 		}
 	} else {
 		if (HasTemperatureControl) {
@@ -189,16 +189,16 @@ bool QHYCCD::updateProperties()
 
 		if (HasFilterWheel) {
 			deleteProperty(FilterNameTP->name);
-			deleteProperty(FilterSlotNP->name);
+			deleteProperty(FilterSlotNP.name);
 		}
 	}
 
 	return true;
 }
 
-void QHYCCD::addFITSKeywords(fitsfile *fptr)
+void QHYCCD::addFITSKeywords(fitsfile *fptr, CCDChip *chip)
 {
-		static char obsdata[128];
+	static char obsdata[128];
 	float exposure;
 	struct tm *dobs;
 	int status = 0;
@@ -249,10 +249,9 @@ void QHYCCD::addFITSKeywords(fitsfile *fptr)
 	if (HasFilterWheel) {
 		void *fname = (void *) filterDesignation[CurrentFilter - 1].c_str();
 
-		fits_write_key(fptr, TSTRING, "FILTER01", fname, "Filter name", &status);
+		fits_write_key(fptr, TSTRING, "FILTER", fname, "Filter name", &status);
 		fits_write_key(fptr, TINT, "FLT-SLOT", &CurrentFilter, "Filter slot", &status);
 	}
-
 }
 
 
@@ -289,30 +288,30 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
 			return true;
 		}
 
-		if (HasFilterWheel && !strcmp(name, FilterSlotNP->name)) {
+		if (HasFilterWheel && !strcmp(name, FilterSlotNP.name)) {
 			TargetFilter = values[0];
 
-			np = IUFindNumber(FilterSlotNP, names[0]);
+			np = IUFindNumber(&FilterSlotNP, names[0]);
 
 			if (!np) {
-				FilterSlotNP->s = IPS_ALERT;
-				IDSetNumber(FilterSlotNP, "Unknown error. %s is not a member of %s property.", names[0], name);
+				FilterSlotNP.s = IPS_ALERT;
+				IDSetNumber(&FilterSlotNP, "Unknown error. %s is not a member of %s property.", names[0], name);
 				return false;
 			}
 
 			if (TargetFilter < MinFilter || TargetFilter > MaxFilter) {
-				FilterSlotNP->s = IPS_ALERT;
-				IDSetNumber(FilterSlotNP, "Error: valid range of filter is from %d to %d", MinFilter, MaxFilter);
+				FilterSlotNP.s = IPS_ALERT;
+				IDSetNumber(&FilterSlotNP, "Error: valid range of filter is from %d to %d", MinFilter, MaxFilter);
 				return false;
 			}
 
-			IUUpdateNumber(FilterSlotNP, values, names, n);
+			IUUpdateNumber(&FilterSlotNP, values, names, n);
 
 			SelectFilter(TargetFilter);
 
 			FilterSlotN[0].value = TargetFilter;
-			FilterSlotNP->s = IPS_OK;
-			IDSetNumber(FilterSlotNP, "Setting current filter to slot %d", TargetFilter);
+			FilterSlotNP.s = IPS_OK;
+			IDSetNumber(&FilterSlotNP, "Setting current filter to slot %d", TargetFilter);
 
 			return true;
 		}

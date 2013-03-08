@@ -55,7 +55,8 @@ public:
 
 	virtual const char *deviceName() = 0;
 
-	virtual void addFITSKeywords(fitsfile *fptr);
+	virtual void addFITSKeywords(fitsfile *fptr, CCDChip *chip);
+	virtual bool GrabExposure() = 0;
 
 	/* Not all cameras have CFW interface */
 	virtual bool GetFilterNames(const char *groupName);
