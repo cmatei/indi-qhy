@@ -28,6 +28,9 @@ void QHY9::initCamera()
 	MaxFilter = 5;
 	CurrentFilter = 1;
 	TargetFilter = 1;
+
+	// default to slowest readout
+	DownloadSpeed = 2;
 }
 
 bool QHY9::initProperties()
