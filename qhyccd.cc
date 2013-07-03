@@ -53,58 +53,41 @@ QHYCCD *QHYCCD::detectCamera()
 
 bool QHYCCD::Connect()
 {
-	if (usb_connected)
+	if (usb_handle)
 		return true;
 
-	usb_connected = libusb_open(usb_dev, &usb_handle) ? false : true;
+	if (libusb_open(usb_dev, &usb_handle))
+		return false;
 
-	if (usb_connected) {
-		SetTimer(QHYCCD_TIMER);
-	}
+	SetTimer(QHYCCD_TIMER);
 
-	return usb_connected;
+	return true;
 }
 
 
 bool QHYCCD::Disconnect()
 {
-	if (usb_connected) {
+	if (usb_handle) {
 		libusb_close(usb_handle);
-		usb_connected = false;
+		usb_handle = NULL;
 	}
 
 	return true;
 }
 
 
-
 void QHYCCD::TimerHit()
 {
 	struct timeval now;
-	unsigned long elapsed, read_wait;
-	int usb_disabled = 0;
 
 	if (!isConnected())
 		return;
 
-	/* delay readout until image is written to RAM */
-	read_wait = Exptime;
-	if (DownloadSpeed == 2 && PrimaryCCD.getBinX() == 1)
-		read_wait += 16 * 1000;
-
-
 	gettimeofday(&now, NULL);
-	elapsed = tv_diff(&now, &exposure_start);
-
-	if (exposing && elapsed >= Exptime)
-		usb_disabled = 1;
-
-	if (exposing && elapsed >= read_wait) {
-		exposing = false;
+	if (InExposure && tv_diff(&now, &exposure_start) >= Exptime)
 		GrabExposure();
-	}
 
-	if (HasTemperatureControl && !usb_disabled)
+	if (HasTemperatureControl)
 		TempControlTimer();
 
 	SetTimer(QHYCCD_TIMER);
@@ -124,7 +107,7 @@ bool QHYCCD::GetFilterNames(const char *groupName)
 	for (i = 0; i < MaxFilter; i++) {
 		snprintf(filterName, MAXINDINAME, "FILTER_SLOT_NAME_%d", i+1);
 		snprintf(filterLabel, MAXINDILABEL, "Filter #%d", i+1);
-		IUFillText(&FilterNameT[i], filterName, filterLabel, filterDesignation[i].c_str());
+		IUFillText(&FilterNameT[i], filterName, filterLabel, "");
 	}
 
 	IUFillTextVector(FilterNameTP, FilterNameT, MaxFilter, deviceName(), "FILTER_NAME", "Filter", groupName, IP_RW, 1, IPS_IDLE);
@@ -137,11 +120,11 @@ bool QHYCCD::initProperties()
 {
 	INDI::CCD::initProperties();
 
-
-	if (HasFilterWheel) {
-		initFilterProperties(deviceName(), FILTER_TAB);
-		GetFilterNames(FILTER_TAB);
-	}
+	IUFillNumber(&GainOffsetN[0], "QHY_GAIN",   "Gain",   "%3.0f", 0, 255, 0, Gain);
+	IUFillNumber(&GainOffsetN[1], "QHY_OFFSET", "Offset", "%3.0f", 0, 255, 0, Offset);
+	IUFillNumberVector(GainOffsetSetNV, &GainOffsetN[0], 2, deviceName(),
+			   "QHY_SETTINGS", "QHY Settings", IMAGE_SETTINGS_TAB,
+			   IP_RW, 60, IPS_IDLE);
 
 	if (HasTemperatureControl) {
 		/* FIXME: this is ugly, with the 3 groups, but e.g. xephem sends all values in a group when setting, so
@@ -160,6 +143,9 @@ bool QHYCCD::initProperties()
 		IUFillNumber(&TemperatureN[3], "CCD_TEC_PWM_CURRENT_VALUE", "TEC Power (%)", "%3.0f", 0, 100, 0, TEC_PWM);
 		IUFillNumberVector(TemperatureGetNV, &TemperatureN[2], 2, deviceName(), "CCD_TEMPERATURE_INFO", "Temperature", "Temperature Info", IP_RO, 60, IPS_IDLE);
 	}
+
+	if (HasFilterWheel)
+		initFilterProperties(deviceName(), FILTER_TAB);
 
 	return true;
 }
@@ -180,17 +166,8 @@ bool QHYCCD::updateProperties()
 			defineText(FilterNameTP);
 			defineNumber(&FilterSlotNP);
 		}
-	} else {
-		if (HasTemperatureControl) {
-			deleteProperty(TemperatureSetNV->name);
-			deleteProperty(TempPWMSetNV->name);
-			deleteProperty(TemperatureGetNV->name);
-		}
 
-		if (HasFilterWheel) {
-			deleteProperty(FilterNameTP->name);
-			deleteProperty(FilterSlotNP.name);
-		}
+		defineNumber(GainOffsetSetNV);
 	}
 
 	return true;
@@ -312,6 +289,19 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
 			FilterSlotN[0].value = TargetFilter;
 			FilterSlotNP.s = IPS_OK;
 			IDSetNumber(&FilterSlotNP, "Setting current filter to slot %d", TargetFilter);
+
+			return true;
+		}
+
+		if (!strcmp(name, GainOffsetSetNV->name)) {
+			if (n < 2)
+				return false;
+
+			Gain   = GainOffsetN[0].value = clamp_int(values[0], 0, 255);
+			Offset = GainOffsetN[1].value = clamp_int(values[1], 0, 255);
+
+			GainOffsetSetNV->s = IPS_OK;
+			IDSetNumber(GainOffsetSetNV, NULL);
 
 			return true;
 		}

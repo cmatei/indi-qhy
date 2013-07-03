@@ -28,7 +28,7 @@ void QHY5::initCamera()
 
 int QHY5::StartExposure(float duration)
 {
-	if (exposing)
+	if (InExposure)
 		return -1;
 
 	Exptime = duration * 1000;

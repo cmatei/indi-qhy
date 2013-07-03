@@ -38,6 +38,8 @@ public:
 		HasGuideHead = false;
 		HasSt4Port = false;
 		HasFilterWheel = false;
+
+		GainOffsetSetNV = new INumberVectorProperty;
 	}
 
 	~QHYCCD() { Disconnect(); }
@@ -72,11 +74,9 @@ protected:
 	virtual void TempControlTimer() {}
 	void   TimerHit();
 
-	bool                  usb_connected;
 	libusb_device        *usb_dev;	         /* USB device address */
 	libusb_device_handle *usb_handle;	 /* USB device handle */
 
-	bool                  exposing;	         /* true if currently exposing */
 	struct timeval        exposure_start;	 /* used by the timer to call ExposureComplete() */
 
 	/* Temperature control */
@@ -91,6 +91,8 @@ protected:
 	INumberVectorProperty *TempPWMSetNV;      /* PWM limit */
 	INumberVectorProperty *TemperatureGetNV;  /* R/O, current temp and PWM */
 
+	INumber GainOffsetN[2];
+	INumberVectorProperty *GainOffsetSetNV;         /* gain & offset*/
 
 	/* QHY Camera Settings */
 	unsigned char Gain;

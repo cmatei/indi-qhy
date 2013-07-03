@@ -6,7 +6,6 @@ using namespace std;
 
 void QHY9::initCamera()
 {
-	fprintf(stderr, "QHY9 INIT CAMERA\n");
 	HasTemperatureControl = true;
 	HasFilterWheel = true;
 	HasGuideHead = false;
@@ -18,11 +17,10 @@ void QHY9::initCamera()
 
 	Gain = 20;
 	Offset = 120;
+	CLAMP = 0;
 	MechanicalShutterMode = 0;
 	DownloadCloseTEC = 1;
 	SDRAM_MAXSIZE = 100;
-
-	SetCCDParams(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT, 16, 5.4, 5.4);
 
 	MinFilter = 1;
 	MaxFilter = 5;
@@ -54,6 +52,7 @@ bool QHY9::initProperties()
 bool QHY9::updateProperties()
 {
 	QHYCCD::updateProperties();
+	SetCCDParams(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT, 16, 5.4, 5.4);
 
 	if (isConnected()) {
 		defineSwitch(ReadOutSP);
@@ -63,13 +62,6 @@ bool QHY9::updateProperties()
 			defineNumber(&FilterSlotNP);
 		}
 
-	} else {
-		deleteProperty(ReadOutSP->name);
-
-		if (FilterNameT != NULL) {
-			deleteProperty(FilterNameTP->name);
-			deleteProperty(FilterSlotNP.name);
-		}
 	}
 
 	return true;
@@ -117,6 +109,7 @@ bool QHY9::AbortExposure()
 		return true;
 
 	abortVideo();
+	InExposure = false;
 
 	return true;
 }
@@ -124,17 +117,23 @@ bool QHY9::AbortExposure()
 
 bool QHY9::GrabExposure()
 {
+	struct timeval tv1, tv2;
 	int pos = 0;
 
-	setShutter(SHUTTER_FREE);
+	gettimeofday(&tv1, NULL);
+	fprintf(stderr, "GrabExposure enter: %ld msec from exposure_start\n", tv_diff(&tv1, &exposure_start));
 
 	PrimaryCCD.setFrameBufferSize(p_size * total_p);
 	if (bulk_transfer_read(QHY9_DATA_BULK_EP, (uint8_t *) PrimaryCCD.getFrameBuffer(), p_size, total_p, &pos))
 		return false;
 
-	fprintf(stderr, "GOT DATA!\n");
+	gettimeofday(&tv2, NULL);
+	fprintf(stderr, "GrabExposure: readout took %ld msec\n", tv_diff(&tv2, &tv1));
+
+	setShutter(SHUTTER_FREE);
 
 	ExposureComplete(&PrimaryCCD);
+	InExposure = false;
 
 	return true;
 }
@@ -205,8 +204,6 @@ void QHY9::setDC201Interrupt(uint8_t PWM, uint8_t FAN)
 
 	/* FIXME: A bulk transfer works, an interrupt_transfer doesn't ?!?! */
 	libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_WRITE_EP, buffer, 3, &transferred, 0);
-
-	//fprintf(stderr, "setdc201: write %d, transferred %d\n", r, transferred);
 }
 
 void QHY9::setCameraRegisters()
@@ -224,14 +221,18 @@ void QHY9::setCameraRegisters()
 	case 1:
 		HBIN = 1;
 		VBIN = 1;
+		//LineSize = PrimaryCCD.getSubW();
+		//VerticalSize = PrimaryCCD.getSubH();
 		LineSize = 3584;
 		VerticalSize = 2574;
-		p_size = 3584 * 2; // must be multiple of 512 ?
+		p_size = 3584 * 2; // must be multiple of 512
 		break;
 
 	case 2:
 		HBIN = 2;
 		VBIN = 2;
+		//LineSize = PrimaryCCD.getSubW() / binx;
+		//VerticalSize = PrimaryCCD.getSubH() / binx;
 		LineSize = 1792;
 		VerticalSize = 1287;
 		p_size = 3584 * 2; // multiple of 512
@@ -240,6 +241,8 @@ void QHY9::setCameraRegisters()
 	case 3:
 		HBIN = 3;
 		VBIN = 3;
+		//LineSize = PrimaryCCD.getSubW() / binx;
+		//VerticalSize = PrimaryCCD.getSubH() / binx;
 		LineSize = 1196;
 		VerticalSize = 858;
 		p_size = 1024;
@@ -248,6 +251,8 @@ void QHY9::setCameraRegisters()
 	case 4:
 		HBIN = 4;
 		VBIN = 4;
+		//LineSize = PrimaryCCD.getSubW() / binx;
+		//VerticalSize = PrimaryCCD.getSubH() / binx;
 		LineSize = 896;
 		VerticalSize = 644;
 		p_size = 1024;
@@ -264,15 +269,15 @@ void QHY9::setCameraRegisters()
 		patchnum = 16;
 	}
 
+	fprintf(stderr, "linesize=%d, vertsize=%d, T=%lu, p_size=%d, total_p=%d, patchnum=%d\n",
+		LineSize, VerticalSize, T, p_size, total_p, patchnum);
+
 	/* FIXME */
 	SKIP_TOP = 0;
 	SKIP_BOTTOM = 0;
 
 	/* 1 = disable AMP during exposure */
 	AMPVOLTAGE = 1;
-
-	// slowest. 0 - normal and 1 - fast
-	//DownloadSpeed = 2;
 
 	/* manual shutter for darks and biases */
 	CCDChip::CCD_FRAME ft = PrimaryCCD.getFrameType();
@@ -282,9 +287,6 @@ void QHY9::setCameraRegisters()
 
 	SDRAM_MAXSIZE = 100;
 
-	// FIXME: CLAMP should be an option ?!
-	CLAMP = 0; // 1 also
-
 	/* fill in register buffer */
 	memset(REG, 0, 64);
 
@@ -292,57 +294,57 @@ void QHY9::setCameraRegisters()
 	time_M = (Exptime - time_L)/256;
 	time_H = (Exptime - time_L - time_M * 256) / 65536;
 
-	REG[0]=Gain ;
-	REG[1]=Offset ;
+	REG[0]=Gain;
+	REG[1]=Offset;
 
 	REG[2]=time_H;
 	REG[3]=time_M;
 	REG[4]=time_L;
 
-	REG[5]=HBIN ;
-	REG[6]=VBIN ;
+	REG[5]=HBIN;
+	REG[6]=VBIN;
 
-	REG[7]=MSB(LineSize );
-	REG[8]=LSB(LineSize );
+	REG[7]=MSB(LineSize);
+	REG[8]=LSB(LineSize);
 
-	REG[9]= MSB(VerticalSize );
-	REG[10]=LSB(VerticalSize );
+	REG[9]= MSB(VerticalSize);
+	REG[10]=LSB(VerticalSize);
 
-	REG[11]=MSB(SKIP_TOP );
-	REG[12]=LSB(SKIP_TOP );
+	REG[11]=MSB(SKIP_TOP);
+	REG[12]=LSB(SKIP_TOP);
 
-	REG[13]=MSB(SKIP_BOTTOM );
-	REG[14]=LSB(SKIP_BOTTOM );
+	REG[13]=MSB(SKIP_BOTTOM);
+	REG[14]=LSB(SKIP_BOTTOM);
 
-	REG[15]=MSB(LiveVideo_BeginLine );
-	REG[16]=LSB(LiveVideo_BeginLine );
+	REG[15]=MSB(LiveVideo_BeginLine);
+	REG[16]=LSB(LiveVideo_BeginLine);
 
 	REG[17]=MSB(patchnum);
 	REG[18]=LSB(patchnum);
 
-	REG[19]=MSB(AnitInterlace );
-	REG[20]=LSB(AnitInterlace );
+	REG[19]=MSB(AnitInterlace);
+	REG[20]=LSB(AnitInterlace);
 
-	REG[22]=MultiFieldBIN ;
+	REG[22]=MultiFieldBIN;
 
-	REG[29]=MSB(ClockADJ );
-	REG[30]=LSB(ClockADJ );
+	REG[29]=MSB(ClockADJ);
+	REG[30]=LSB(ClockADJ);
 
-	REG[32]=AMPVOLTAGE ;
+	REG[32]=AMPVOLTAGE;
 
-	REG[33]=DownloadSpeed ;
+	REG[33]=DownloadSpeed;
 
-	REG[35]=TgateMode ;
-	REG[36]=ShortExposure ;
-	REG[37]=VSUB ;
+	REG[35]=TgateMode;
+	REG[36]=ShortExposure;
+	REG[37]=VSUB;
 	REG[38]=CLAMP;
 
-	REG[42]=TransferBIT ;
+	REG[42]=TransferBIT;
 
-	REG[46]=TopSkipNull ;
+	REG[46]=TopSkipNull;
 
-	REG[47]=MSB(TopSkipPix );
-	REG[48]=LSB(TopSkipPix );
+	REG[47]=MSB(TopSkipPix);
+	REG[48]=LSB(TopSkipPix);
 
 	REG[51]=MechanicalShutterMode ;
 	REG[52]=DownloadCloseTEC ;
@@ -375,11 +377,13 @@ bool QHY9::ISNewSwitch(const char *dev, const char *name, ISState *states, char 
                         ReadOutSP->s = IPS_OK;
 			IDSetSwitch(ReadOutSP, NULL);
 
-			fprintf(stderr, "download speed %d\n", DownloadSpeed);
+			IDMessage(dev, "readout speed %d", DownloadSpeed);
+
+			return true;
 		}
         }
 
-	return CCD::ISNewSwitch(dev, name, states, names, n);
+	return QHYCCD::ISNewSwitch(dev, name, states, names, n);
 }
 
 void QHY9::beginVideo()
@@ -396,35 +400,6 @@ void QHY9::abortVideo()
 	int transferred;
 
 	libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_WRITE_EP, buffer, 1, &transferred, 0);
-
-	// ?? setShutter(SHUTTER_FREE);
-#if 0
-
-void __stdcall sendForceStop(PCHAR devname){
-unsigned char Buffer[1];
-Buffer[0]=0;
-
-
-
-sendInterrupt(devname,1,Buffer);
-
-}
-
-void __stdcall sendAbortCapture(PCHAR devname){
-unsigned char Buffer[1];
-Buffer[0]=0xff;
-
-
-
-sendInterrupt(devname,1,Buffer);
-
-}
-
-	/* FIXME: UNCHECKED IN DOCS !! */
-	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
-				QHY9_ABORT_VIDEO_CMD, 0, 0,
-				NULL, 0, 0);
-#endif
 }
 
 void QHY9::setShutter(int mode)
@@ -438,7 +413,6 @@ void QHY9::setShutter(int mode)
 bool QHY9::SetFilterNames()
 {
 	return true;
-
 }
 
 bool QHY9::SelectFilter(int slot)
@@ -449,8 +423,6 @@ bool QHY9::SelectFilter(int slot)
 
 	buffer[0] = 0x5A;
 	buffer[1] = slot;
-
-	fprintf(stderr, "FILTER: slot %d\n\n\n\n", slot + 1);
 
 	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
 				QHY9_CFW_CMD, 0, 0, buffer, 2, 0);
@@ -511,7 +483,7 @@ void QHY9::TempControlTimer()
 			counter = 0;
 		}
 
-		fprintf(stderr, "volt %.2f, temp %.2f, target %.2f, PWM %d\n",
-			voltage, Temperature, TemperatureTarget, TEC_PWM);
+		//fprintf(stderr, "volt %.2f, temp %.2f, target %.2f, PWM %d\n",
+		//	voltage, Temperature, TemperatureTarget, TEC_PWM);
 	}
 }
