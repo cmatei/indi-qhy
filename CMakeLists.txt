@@ -38,8 +38,8 @@ set(indiqhy_SRCS
 
 add_executable(indi_qhy ${indiqhy_SRCS})
 
-target_link_libraries(indi_qhy ${INDI_LIBRARIES} ${INDI_MAIN_LIBRARIES} ${INDI_DRIVER_LIBRARIES}
-  ${CFITSIO_LIBRARIES} ${QHY_LIBRARIES} ${LIBUSB10_LIBRARIES} ${ZLIB_LIBRARIES} )
+target_link_libraries(indi_qhy ${INDI_LIBRARIES} ${INDI_DRIVER_LIBRARIES}
+  ${CFITSIO_LIBRARIES} ${LIBUSB10_LIBRARIES} ${ZLIB_LIBRARIES} )
 
 install(TARGETS indi_qhy RUNTIME DESTINATION bin )
 

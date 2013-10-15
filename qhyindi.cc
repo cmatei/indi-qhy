@@ -16,7 +16,7 @@ void ISGetProperties(const char *dev)
 {
 	initialize();
 
-	if (!camera || (dev && strcmp(dev, camera->deviceName())))
+	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
 		return;
 
 	camera->ISGetProperties(dev);
@@ -26,7 +26,7 @@ void ISNewSwitch(const char *dev, const char *name, ISState *states, char *names
 {
 	initialize();
 
-	if (!camera || (dev && strcmp(dev, camera->deviceName())))
+	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
 		return;
 
 	camera->ISNewSwitch(dev, name, states, names, n);
@@ -36,7 +36,7 @@ void ISNewText (const char *dev, const char *name, char *texts[], char *names[],
 {
 	initialize();
 
-	if (!camera || (dev && strcmp(dev, camera->deviceName())))
+	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
 		return;
 
 	camera->ISNewText(dev, name, texts, names, n);
@@ -46,7 +46,7 @@ void ISNewNumber (const char *dev, const char *name, double values[], char *name
 {
 	initialize();
 
-	if (!camera || (dev && strcmp(dev, camera->deviceName())))
+	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
 		return;
 
 	camera->ISNewNumber(dev, name, values, names, n);

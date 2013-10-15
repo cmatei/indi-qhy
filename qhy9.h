@@ -38,9 +38,7 @@ public:
 
 	~QHY9() { delete ReadOutSP; }
 
-	const char *getDefaultName() { return "QHY9"; }
-
-	const char *deviceName() { return getDefaultName(); }
+	virtual const char *getDefaultName() { return (char *) "QHY9"; }
 
 	void initCamera();
 

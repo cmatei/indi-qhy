@@ -55,8 +55,6 @@ public:
 	virtual bool initProperties();
 	virtual bool updateProperties();
 
-	virtual const char *deviceName() = 0;
-
 	virtual void addFITSKeywords(fitsfile *fptr, CCDChip *chip);
 	virtual bool GrabExposure() = 0;
 
@@ -65,6 +63,12 @@ public:
 	virtual bool SetFilterNames() { return false; }
 	virtual bool SelectFilter(int i) { return false; }
 	virtual int QueryFilter() { return 0; }
+
+	virtual bool GuideNorth(float ms) { return false; }
+	virtual bool GuideSouth(float ms) { return false; }
+	virtual bool GuideEast(float ms) { return false; }
+	virtual bool GuideWest(float ms) { return false; }
+
 
 protected:
 
@@ -125,9 +129,9 @@ protected:
 	unsigned char WindowHeater;   //0-15
 
 	/* I don't fully understand these */
-	int p_size;
-	int patchnum;
-	int total_p;
+	unsigned int p_size;
+	unsigned int patchnum;
+	unsigned int total_p;
 
 	int bulk_transfer_read(int ep, unsigned char *data, int psize, int pnum, int *pos);
 };

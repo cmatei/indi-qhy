@@ -36,11 +36,11 @@ bool QHY9::initProperties()
 	QHYCCD::initProperties();
 
 	/* Readout speed */
-	IUFillSwitch(&ReadOutS[0], "READOUT_FAST",   "Fast",   ISS_OFF);
-	IUFillSwitch(&ReadOutS[1], "READOUT_NORMAL", "Normal", ISS_OFF);
-	IUFillSwitch(&ReadOutS[2], "READOUT_SLOW",   "Slow",   ISS_ON);
+	IUFillSwitch(&ReadOutS[0], "READOUT_FAST",   "Fast",   (DownloadSpeed == 0) ? ISS_ON : ISS_OFF);
+	IUFillSwitch(&ReadOutS[1], "READOUT_NORMAL", "Normal", (DownloadSpeed == 1) ? ISS_ON : ISS_OFF);
+	IUFillSwitch(&ReadOutS[2], "READOUT_SLOW",   "Slow",   (DownloadSpeed == 2) ? ISS_ON : ISS_OFF);
 
-	IUFillSwitchVector(ReadOutSP, ReadOutS, 3, deviceName(),
+	IUFillSwitchVector(ReadOutSP, ReadOutS, 3, getDeviceName(),
 			   "READOUT_SPEED", "Readout Speed",
 			   IMAGE_SETTINGS_TAB, IP_WO, ISR_1OFMANY, 0, IPS_IDLE);
 
@@ -52,6 +52,7 @@ bool QHY9::initProperties()
 bool QHY9::updateProperties()
 {
 	QHYCCD::updateProperties();
+
 	SetCCDParams(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT, 16, 5.4, 5.4);
 
 	if (isConnected()) {
@@ -117,15 +118,47 @@ bool QHY9::AbortExposure()
 
 bool QHY9::GrabExposure()
 {
+	static uint16_t *buffer = NULL;
+	static size_t bufsize = 0;
 	struct timeval tv1, tv2;
 	int pos = 0;
+	int x, y, w, h, bx, by, ix, iy;
+	uint16_t *dst;
 
 	gettimeofday(&tv1, NULL);
 	fprintf(stderr, "GrabExposure enter: %ld msec from exposure_start\n", tv_diff(&tv1, &exposure_start));
 
+	/* grab to local buffer first */
+	if (bufsize != p_size * total_p) {
+		free(buffer);
+		bufsize = p_size * total_p;
+		buffer = (uint16_t *) malloc(bufsize);
+	}
+#if 0
 	PrimaryCCD.setFrameBufferSize(p_size * total_p);
 	if (bulk_transfer_read(QHY9_DATA_BULK_EP, (uint8_t *) PrimaryCCD.getFrameBuffer(), p_size, total_p, &pos))
 		return false;
+#else
+	if (bulk_transfer_read(QHY9_DATA_BULK_EP, (uint8_t *) buffer, p_size, total_p, &pos))
+		return false;
+
+	fprintf(stderr, "transferred\n");
+
+	x  = PrimaryCCD.getSubX();
+	y  = PrimaryCCD.getSubY();
+	w  = PrimaryCCD.getSubW();
+	h  = PrimaryCCD.getSubH();
+	bx = PrimaryCCD.getBinX();
+	by = PrimaryCCD.getBinY();
+
+	PrimaryCCD.setFrameBufferSize(w / bx * h / by * 2);
+	dst = (uint16_t *) PrimaryCCD.getFrameBuffer();
+	for (iy = 0; iy < h / by; iy++) {
+		for (ix = x / bx; ix < (x + w) / bx; ix++) {
+			*dst++ = buffer[iy * LineSize + ix];
+		}
+	}
+#endif
 
 	gettimeofday(&tv2, NULL);
 	fprintf(stderr, "GrabExposure: readout took %ld msec\n", tv_diff(&tv2, &tv1));
@@ -243,7 +276,7 @@ void QHY9::setCameraRegisters()
 		VBIN = 3;
 		//LineSize = PrimaryCCD.getSubW() / binx;
 		//VerticalSize = PrimaryCCD.getSubH() / binx;
-		LineSize = 1196;
+		LineSize = 1194;               // was 1196, bad
 		VerticalSize = 858;
 		p_size = 1024;
 		break;
@@ -259,6 +292,10 @@ void QHY9::setCameraRegisters()
 		break;
 	}
 
+	SKIP_TOP = PrimaryCCD.getSubY() / PrimaryCCD.getBinY();
+	SKIP_BOTTOM = VerticalSize - SKIP_TOP - PrimaryCCD.getSubH() / PrimaryCCD.getBinY();
+	VerticalSize = VerticalSize - SKIP_TOP - SKIP_BOTTOM;
+
 	T = (LineSize * VerticalSize + TopSkipPix) * 2;
 
 	if (T % p_size) {
@@ -271,10 +308,6 @@ void QHY9::setCameraRegisters()
 
 	fprintf(stderr, "linesize=%d, vertsize=%d, T=%lu, p_size=%d, total_p=%d, patchnum=%d\n",
 		LineSize, VerticalSize, T, p_size, total_p, patchnum);
-
-	/* FIXME */
-	SKIP_TOP = 0;
-	SKIP_BOTTOM = 0;
 
 	/* 1 = disable AMP during exposure */
 	AMPVOLTAGE = 1;
@@ -360,7 +393,7 @@ void QHY9::setCameraRegisters()
 
 bool QHY9::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-	if (dev && !strcmp(dev, deviceName())) {
+	if (dev && !strcmp(dev, getDeviceName())) {
 		if (!strcmp(name, ReadOutSP->name)) {
 			if (IUUpdateSwitch(ReadOutSP, states, names, n) < 0)
 				return false;

@@ -110,7 +110,7 @@ bool QHYCCD::GetFilterNames(const char *groupName)
 		IUFillText(&FilterNameT[i], filterName, filterLabel, "");
 	}
 
-	IUFillTextVector(FilterNameTP, FilterNameT, MaxFilter, deviceName(), "FILTER_NAME", "Filter", groupName, IP_RW, 1, IPS_IDLE);
+	IUFillTextVector(FilterNameTP, FilterNameT, MaxFilter, getDeviceName(), "FILTER_NAME", "Filter", groupName, IP_RW, 1, IPS_IDLE);
 
 	return true;
 }
@@ -122,7 +122,7 @@ bool QHYCCD::initProperties()
 
 	IUFillNumber(&GainOffsetN[0], "QHY_GAIN",   "Gain",   "%3.0f", 0, 255, 0, Gain);
 	IUFillNumber(&GainOffsetN[1], "QHY_OFFSET", "Offset", "%3.0f", 0, 255, 0, Offset);
-	IUFillNumberVector(GainOffsetSetNV, &GainOffsetN[0], 2, deviceName(),
+	IUFillNumberVector(GainOffsetSetNV, &GainOffsetN[0], 2, getDeviceName(),
 			   "QHY_SETTINGS", "QHY Settings", IMAGE_SETTINGS_TAB,
 			   IP_RW, 60, IPS_IDLE);
 
@@ -132,20 +132,20 @@ bool QHYCCD::initProperties()
 
 		TemperatureSetNV = new INumberVectorProperty();
 		IUFillNumber(&TemperatureN[0], "CCD_TEMPERATURE_VALUE", "Temp. Setpoint (degC)", "%4.2f", -50, 50, 0, TemperatureTarget);
-		IUFillNumberVector(TemperatureSetNV, &TemperatureN[0], 1, deviceName(), "CCD_TEMPERATURE", "Temperature", "Main Control", IP_RW, 60, IPS_IDLE);
+		IUFillNumberVector(TemperatureSetNV, &TemperatureN[0], 1, getDeviceName(), "CCD_TEMPERATURE", "Temperature", "Main Control", IP_RW, 60, IPS_IDLE);
 
 		TempPWMSetNV = new INumberVectorProperty();
 		IUFillNumber(&TemperatureN[1], "CCD_TEC_PWM_LIMIT_VALUE", "TEC Power limit (%)", "%3.0f", 0, 100, 0, TEC_PWMLimit);
-		IUFillNumberVector(TempPWMSetNV, &TemperatureN[1], 1, deviceName(), "CCD_TEC_PWM_LIMIT", "TEC Power", "Main Control", IP_RW, 60, IPS_IDLE);
+		IUFillNumberVector(TempPWMSetNV, &TemperatureN[1], 1, getDeviceName(), "CCD_TEC_PWM_LIMIT", "TEC Power", "Main Control", IP_RW, 60, IPS_IDLE);
 
 		TemperatureGetNV = new INumberVectorProperty();
 		IUFillNumber(&TemperatureN[2], "CCD_TEMPERATURE_CURRENT_VALUE", "Temperature (degC)", "%4.2f", -50, 50, 0, Temperature);
 		IUFillNumber(&TemperatureN[3], "CCD_TEC_PWM_CURRENT_VALUE", "TEC Power (%)", "%3.0f", 0, 100, 0, TEC_PWM);
-		IUFillNumberVector(TemperatureGetNV, &TemperatureN[2], 2, deviceName(), "CCD_TEMPERATURE_INFO", "Temperature", "Temperature Info", IP_RO, 60, IPS_IDLE);
+		IUFillNumberVector(TemperatureGetNV, &TemperatureN[2], 2, getDeviceName(), "CCD_TEMPERATURE_INFO", "Temperature", "Temperature Info", IP_RO, 60, IPS_IDLE);
 	}
 
 	if (HasFilterWheel)
-		initFilterProperties(deviceName(), FILTER_TAB);
+		initFilterProperties(getDeviceName(), FILTER_TAB);
 
 	return true;
 }
@@ -237,8 +237,8 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
 	double v;
 	INumber *np;
 
-	fprintf(stderr, "ISNEWNUMBER dev %s, device %s, name %s\n\n", dev, deviceName(), name);
-	if (dev && !strcmp(dev, deviceName())) {
+	fprintf(stderr, "ISNEWNUMBER dev %s, device %s, name %s\n\n", dev, getDeviceName(), name);
+	if (dev && !strcmp(dev, getDeviceName())) {
 		if (HasTemperatureControl && !strcmp(name, "CCD_TEMPERATURE")) {
 			if (n < 1) return false;
 
@@ -312,7 +312,7 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
 
 bool QHYCCD::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-	if (dev && !strcmp(dev, deviceName())) {
+	if (dev && !strcmp(dev, getDeviceName())) {
         }
 
 	return CCD::ISNewSwitch(dev, name, states, names, n);
@@ -322,7 +322,7 @@ bool QHYCCD::ISNewText (const char *dev, const char *name, char *texts[], char *
 {
 	int i;
 
-	if (dev && !strcmp(dev, deviceName())) {
+	if (dev && !strcmp(dev, getDeviceName())) {
 		if (!strcmp(name, FilterNameTP->name)) {
 			if (IUUpdateText(FilterNameTP, texts, names, n) < 0) {
 				FilterNameTP->s = IPS_ALERT;
