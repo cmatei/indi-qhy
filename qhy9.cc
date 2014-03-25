@@ -134,11 +134,7 @@ bool QHY9::GrabExposure()
 		bufsize = p_size * total_p;
 		buffer = (uint16_t *) malloc(bufsize);
 	}
-#if 0
-	PrimaryCCD.setFrameBufferSize(p_size * total_p);
-	if (bulk_transfer_read(QHY9_DATA_BULK_EP, (uint8_t *) PrimaryCCD.getFrameBuffer(), p_size, total_p, &pos))
-		return false;
-#else
+
 	if (bulk_transfer_read(QHY9_DATA_BULK_EP, (uint8_t *) buffer, p_size, total_p, &pos))
 		return false;
 
@@ -151,6 +147,9 @@ bool QHY9::GrabExposure()
 	bx = PrimaryCCD.getBinX();
 	by = PrimaryCCD.getBinY();
 
+	fprintf(stderr, "x %d, y %d, w %d, h %d, bx %d, by %d\n",
+		x, y, w, h, bx, by);
+
 	PrimaryCCD.setFrameBufferSize(w / bx * h / by * 2);
 	dst = (uint16_t *) PrimaryCCD.getFrameBuffer();
 	for (iy = 0; iy < h / by; iy++) {
@@ -158,7 +157,6 @@ bool QHY9::GrabExposure()
 			*dst++ = buffer[iy * LineSize + ix];
 		}
 	}
-#endif
 
 	gettimeofday(&tv2, NULL);
 	fprintf(stderr, "GrabExposure: readout took %ld msec\n", tv_diff(&tv2, &tv1));
@@ -296,6 +294,9 @@ void QHY9::setCameraRegisters()
 	SKIP_BOTTOM = VerticalSize - SKIP_TOP - PrimaryCCD.getSubH() / PrimaryCCD.getBinY();
 	VerticalSize = VerticalSize - SKIP_TOP - SKIP_BOTTOM;
 
+	fprintf(stderr, "SKIP_TOP %d, SKIP_BOTTOM %d, VerticalSize %d\n",
+		SKIP_TOP, SKIP_BOTTOM, VerticalSize);
+
 	T = (LineSize * VerticalSize + TopSkipPix) * 2;
 
 	if (T % p_size) {
@@ -386,6 +387,17 @@ void QHY9::setCameraRegisters()
 
 	REG[58]=SDRAM_MAXSIZE ;
 	REG[63]=Trig ;
+
+	int i;
+	fprintf(stderr, "Sending REGS...\n");
+	for (i = 0; i < 64; i++) {
+		if (i % 16 == 0) {
+			fprintf(stderr, "\n%02d: ", i);
+		}
+
+		fprintf(stderr, "%02x ", REG[i]);
+	}
+	fprintf(stderr, "\n");
 
 	libusb_control_transfer(usb_handle, QHY9_VENDOR_REQUEST_WRITE,
 				QHY9_REGISTERS_CMD, 0, 0, REG, 64, 0);
