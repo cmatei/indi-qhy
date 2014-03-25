@@ -19,6 +19,7 @@ What doesn't work:
 
 * I hopefully leave something uninitialized, somewhere after the subframes commit.
   Last nights at the scope I had an issue, namely that first exposure would hang and
-  require a camera reset. I'm hoping it's a software issue, rather than broken hw.
+  require a camera reset. Once working, it was reliable.
+  I'm hoping it's a software issue, rather than broken hw.
   
 
