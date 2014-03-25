@@ -106,8 +106,10 @@ int QHY9::StartExposure(float duration)
 
 bool QHY9::AbortExposure()
 {
-	if (!InExposure)
-		return true;
+// FIXME: if camera still locks on exposure transfer, check if we can still abort
+// or the camera is dead
+//	if (!InExposure)
+//		return true;
 
 	abortVideo();
 	InExposure = false;
@@ -134,6 +136,9 @@ bool QHY9::GrabExposure()
 		bufsize = p_size * total_p;
 		buffer = (uint16_t *) malloc(bufsize);
 	}
+
+	fprintf(stderr, "expecting: p_size %d, total_p %d, bufsize %d\n",
+		p_size, total_p, bufsize);
 
 	if (bulk_transfer_read(QHY9_DATA_BULK_EP, (uint8_t *) buffer, p_size, total_p, &pos))
 		return false;
