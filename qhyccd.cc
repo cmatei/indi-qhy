@@ -1,6 +1,5 @@
 #include "qhyccd.h"
 #include "qhy9.h"
-#include "qhy5.h"
 
 using namespace std;
 
@@ -36,9 +35,9 @@ QHYCCD *QHYCCD::detectCamera()
 			camera = new QHY9(dev);
 			break;
 
-		case QHYCCD_QHY5_DEVID:
-			camera = new QHY5(dev);
-			break;
+//		case QHYCCD_QHY5_DEVID:
+//			camera = new QHY5(dev);
+//			break;
 		}
 	}
 
@@ -84,10 +83,10 @@ void QHYCCD::TimerHit()
 		return;
 
 	gettimeofday(&now, NULL);
-	if (InExposure && tv_diff(&now, &exposure_start) >= Exptime)
+	if (InExposure && (unsigned long) tv_diff(&now, &exposure_start) >= Exptime)
 		GrabExposure();
 
-	if (HasTemperatureControl)
+	if (HasCooler())
 		TempControlTimer();
 
 	SetTimer(QHYCCD_TIMER);
@@ -126,7 +125,7 @@ bool QHYCCD::initProperties()
 			   "QHY_SETTINGS", "QHY Settings", IMAGE_SETTINGS_TAB,
 			   IP_RW, 60, IPS_IDLE);
 
-	if (HasTemperatureControl) {
+	if (HasCooler()) {
 		/* FIXME: this is ugly, with the 3 groups, but e.g. xephem sends all values in a group when setting, so
 		   trying to avoid overwriting temp setpoint with current temp for instance */
 
@@ -156,7 +155,7 @@ bool QHYCCD::updateProperties()
 	INDI::CCD::updateProperties();
 
 	if (isConnected()) {
-		if (HasTemperatureControl) {
+		if (HasCooler()) {
 			defineNumber(TemperatureSetNV);
 			defineNumber(TempPWMSetNV);
 			defineNumber(TemperatureGetNV);
@@ -217,7 +216,7 @@ void QHYCCD::addFITSKeywords(fitsfile *fptr, CCDChip *chip)
 
 
 	/* CCD Temperature */
-	if (HasTemperatureControl) {
+	if (HasCooler()) {
 		fits_write_key(fptr, TDOUBLE, "CCDTEMP", &Temperature, "CCD temperature, degC", &status);
 		fits_write_key(fptr, TDOUBLE, "CCDTSET", &TemperatureTarget, "CCD set temperature, degC", &status);
 	}
@@ -239,7 +238,7 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
 
 	fprintf(stderr, "ISNEWNUMBER dev %s, device %s, name %s\n\n", dev, getDeviceName(), name);
 	if (dev && !strcmp(dev, getDeviceName())) {
-		if (HasTemperatureControl && !strcmp(name, "CCD_TEMPERATURE")) {
+		if (HasCooler() && !strcmp(name, "CCD_TEMPERATURE")) {
 			if (n < 1) return false;
 
 			v = clamp_double(values[0], -50, 50);
@@ -252,7 +251,7 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
 			return true;
 		}
 
-		if (HasTemperatureControl && !strcmp(name, "CCD_TEC_PWM_LIMIT")) {
+		if (HasCooler() && !strcmp(name, "CCD_TEC_PWM_LIMIT")) {
 			if (n < 1) return false;
 
 			v = clamp_double(values[0], 0, 90);

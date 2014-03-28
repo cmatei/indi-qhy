@@ -6,9 +6,13 @@ using namespace std;
 
 void QHY9::initCamera()
 {
-	HasTemperatureControl = true;
+	Capability cap;
+	cap.hasCooler = true;
+	cap.hasGuideHead = false;
+
+	SetCapability(&cap);
+
 	HasFilterWheel = true;
-	HasGuideHead = false;
 
 	TemperatureTarget = 50.0;
 	Temperature = 50.0;
@@ -68,12 +72,12 @@ bool QHY9::updateProperties()
 	return true;
 }
 
-int QHY9::StartExposure(float duration)
+bool QHY9::StartExposure(float duration)
 {
 	CCDChip::CCD_FRAME type;
 
 	if (InExposure)
-		return -1;
+		return false;
 
 	type = PrimaryCCD.getFrameType();
 
@@ -81,7 +85,7 @@ int QHY9::StartExposure(float duration)
 	   This is useful for the load/save config feature of INDI drivers,
 	   so they won't trigger an exposure when loading config */
 	if (type != CCDChip::BIAS_FRAME && duration == 0.0)
-		return 1;
+		return false;
 
 	Exptime = duration * 1000;
 
@@ -101,7 +105,7 @@ int QHY9::StartExposure(float duration)
 	beginVideo();
 
 	// 0 - exp. running on timers, 1 short exposures already done,  -1 error
-	return 0;
+	return true;
 }
 
 bool QHY9::AbortExposure()
@@ -137,7 +141,7 @@ bool QHY9::GrabExposure()
 		buffer = (uint16_t *) malloc(bufsize);
 	}
 
-	fprintf(stderr, "expecting: p_size %d, total_p %d, bufsize %d\n",
+	fprintf(stderr, "expecting: p_size %d, total_p %d, bufsize %zd\n",
 		p_size, total_p, bufsize);
 
 	if (bulk_transfer_read(QHY9_DATA_BULK_EP, (uint8_t *) buffer, p_size, total_p, &pos))

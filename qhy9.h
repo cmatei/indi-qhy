@@ -45,7 +45,7 @@ public:
 	bool initProperties();
 	bool updateProperties();
 
-	int StartExposure(float duration);
+	bool StartExposure(float duration);
 	bool AbortExposure();
 
 	bool GrabExposure();

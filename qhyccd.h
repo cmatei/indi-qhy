@@ -32,11 +32,16 @@ public:
 	static QHYCCD *detectCamera();
 
         QHYCCD(libusb_device *usbdev) {
+		Capability cap;
+
 		this->usb_dev = usbdev;
 
-		HasTemperatureControl = false;
-		HasGuideHead = false;
-		HasSt4Port = false;
+		cap.hasCooler = false;
+		cap.hasGuideHead = false;
+		cap.hasST4Port = false;
+
+		SetCapability(&cap);
+
 		HasFilterWheel = false;
 
 		GainOffsetSetNV = new INumberVectorProperty;
@@ -73,6 +78,8 @@ public:
 protected:
 
 	bool HasFilterWheel;
+	int MinFilter;
+	int MaxFilter;
 	std::string filterDesignation[QHYCCD_MAX_FILTERS];
 
 	virtual void TempControlTimer() {}
@@ -84,7 +91,6 @@ protected:
 	struct timeval        exposure_start;	 /* used by the timer to call ExposureComplete() */
 
 	/* Temperature control */
-	bool    HasTemperatureControl;
 	double  TemperatureTarget;		 /* temperature setpoint in degC */
 	double  Temperature;		         /* current temperature in degC */
 	int     TEC_PWMLimit;		         /* 0..100, TEC power limit */

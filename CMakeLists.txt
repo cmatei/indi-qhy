@@ -33,7 +33,6 @@ set(indiqhy_SRCS
   ${CMAKE_SOURCE_DIR}/qhyindi.cc
   ${CMAKE_SOURCE_DIR}/qhyccd.cc
   ${CMAKE_SOURCE_DIR}/qhy9.cc
-  ${CMAKE_SOURCE_DIR}/qhy5.cc
   )
 
 add_executable(indi_qhy ${indiqhy_SRCS})
