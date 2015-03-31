@@ -33,7 +33,6 @@ set(indiqhy_SRCS
   ${CMAKE_SOURCE_DIR}/qhyindi.cc
   ${CMAKE_SOURCE_DIR}/qhyccd.cc
   ${CMAKE_SOURCE_DIR}/qhy9.cc
-  ${CMAKE_SOURCE_DIR}/qhy5.cc
   )
 
 add_executable(indi_qhy ${indiqhy_SRCS})
@@ -42,9 +41,3 @@ target_link_libraries(indi_qhy ${INDI_LIBRARIES} ${INDI_DRIVER_LIBRARIES}
   ${CFITSIO_LIBRARIES} ${LIBUSB10_LIBRARIES} ${ZLIB_LIBRARIES} )
 
 install(TARGETS indi_qhy RUNTIME DESTINATION bin )
-
-install(FILES indi_qhy.xml DESTINATION ${INDI_DATA_DIR} )
-
-install(FILES firmware/qhy5.hex DESTINATION ${FIRMWARE_INSTALL_DIR})
-install(FILES firmware/qhy5loader.hex DESTINATION ${FIRMWARE_INSTALL_DIR})
-install(FILES firmware/85-qhy.rules DESTINATION ${UDEVRULES_INSTALL_DIR})

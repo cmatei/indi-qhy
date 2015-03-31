@@ -20,7 +20,6 @@
 #include <libusb-1.0/libusb.h>
 
 #define QHYCCD_QHY9_DEVID 0x16188301
-#define QHYCCD_QHY5_DEVID 0x16C0296D
 
 #define QHYCCD_TIMER (1 * 1000)
 
