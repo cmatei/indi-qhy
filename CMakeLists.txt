@@ -30,8 +30,6 @@ include_directories( ${CFITSIO_INCLUDE_DIR})
 
 ########### QHY ###########
 set(indiqhy_SRCS
-  ${CMAKE_SOURCE_DIR}/qhyindi.cc
-  ${CMAKE_SOURCE_DIR}/qhyccd.cc
   ${CMAKE_SOURCE_DIR}/qhy9.cc
   )
 

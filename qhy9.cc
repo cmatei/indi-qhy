@@ -1,14 +1,171 @@
 
-#include "qhyccd.h"
 #include "qhy9.h"
 
-using namespace std;
+static QHY9 *camera = NULL;
 
+void initialize()
+{
+	if (camera)
+		return;
+
+	camera = new QHY9();
+}
+
+
+void ISGetProperties(const char *dev)
+{
+	initialize();
+
+	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
+		return;
+
+	camera->ISGetProperties(dev);
+}
+
+void ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
+{
+	initialize();
+
+	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
+		return;
+
+	camera->ISNewSwitch(dev, name, states, names, n);
+}
+
+void ISNewText (const char *dev, const char *name, char *texts[], char *names[], int n)
+{
+	initialize();
+
+	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
+		return;
+
+	camera->ISNewText(dev, name, texts, names, n);
+}
+
+void ISNewNumber (const char *dev, const char *name, double values[], char *names[], int n)
+{
+	initialize();
+
+	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
+		return;
+
+	camera->ISNewNumber(dev, name, values, names, n);
+}
+
+void ISNewBLOB (const char *dev, const char *name, int sizes[], int blobsizes[], char *blobs[], char *formats[], char *names[], int n)
+{
+	INDI_UNUSED(dev);
+	INDI_UNUSED(name);
+	INDI_UNUSED(sizes);
+	INDI_UNUSED(blobsizes);
+	INDI_UNUSED(blobs);
+	INDI_UNUSED(formats);
+	INDI_UNUSED(names);
+	INDI_UNUSED(n);
+}
+
+void ISSnoopDevice (XMLEle *root)
+{
+	INDI_UNUSED(root);
+}
+
+
+QHY9::QHY9()
+	: INDI::CCD()
+{
+	usb_handle = NULL;
+	//initCamera();
+}
+
+
+bool QHY9::Connect()
+{
+	libusb_device **devices;
+	libusb_device *dev;
+	struct libusb_device_descriptor desc;
+	unsigned int devID;
+	int i, n;
+
+	/* already connected ? */
+	if (usb_handle)
+		return true;
+
+	if (libusb_init(NULL))
+		return false;
+
+	n = libusb_get_device_list(NULL, &devices);
+	for (i = 0; i < n; i++) {
+		dev = devices[i];
+
+		if (libusb_get_device_descriptor(dev, &desc) < 0)
+			continue;
+
+		devID = (desc.idVendor << 16) + desc.idProduct;
+		if (devID == QHY9_USB_DEVID) {
+
+			libusb_ref_device(dev);
+			SetTimer(QHYCCD_TIMER);
+
+			libusb_free_device_list(devices, 1);
+
+			return true;
+		}
+	}
+
+	libusb_free_device_list(devices, 1);
+
+	return false;
+}
+
+
+bool QHY9::Disconnect()
+{
+	if (usb_handle) {
+		libusb_close(usb_handle);
+		usb_handle = NULL;
+	}
+
+	libusb_exit(NULL);
+
+	return true;
+}
+
+
+#if 0
+QHYCCD *QHYCCD::detectCamera()
+{
+	static bool libusb_initialized = false;
+	libusb_device **devices;
+	struct libusb_device_descriptor desc;
+	unsigned int devID;
+	int i, n;
+
+	if (!libusb_initialized) {
+		if (libusb_init(NULL))
+			return NULL;
+
+		libusb_initialized = true;
+	}
+
+}
+
+#endif
+
+#if 0
 void QHY9::initCamera()
 {
-	HasTemperatureControl = true;
-	HasFilterWheel = true;
-	HasGuideHead = false;
+	CCDCapability cap = {
+		.hasGuideHead = false,
+		.hasST4Port = false,
+		.hasShutter = true,
+		.hasCooler = true,
+		.canBin = true,
+		.canSubFrame = true,
+		.canAbort = true,
+		.hasBayer = false,
+	};
+
+	SetCCDCapability(&cap);
 
 	TemperatureTarget = 50.0;
 	Temperature = 50.0;
@@ -31,49 +188,127 @@ void QHY9::initCamera()
 	DownloadSpeed = 2;
 }
 
+#endif
+
+
+void QHY9::TimerHit()
+{
+	struct timeval now;
+
+	if (!isConnected())
+		return;
+
+	gettimeofday(&now, NULL);
+	if (InExposure && tv_diff(&now, &exposure_start) >= (long) Exptime)
+		GrabExposure();
+
+	if (HasTemperatureControl)
+		TempControlTimer();
+
+	SetTimer(QHYCCD_TIMER);
+}
+
 bool QHY9::initProperties()
 {
-	QHYCCD::initProperties();
+	INDI::CCD::initProperties();
+
 
 	/* Readout speed */
 	IUFillSwitch(&ReadOutS[0], "READOUT_FAST",   "Fast",   (DownloadSpeed == 0) ? ISS_ON : ISS_OFF);
 	IUFillSwitch(&ReadOutS[1], "READOUT_NORMAL", "Normal", (DownloadSpeed == 1) ? ISS_ON : ISS_OFF);
 	IUFillSwitch(&ReadOutS[2], "READOUT_SLOW",   "Slow",   (DownloadSpeed == 2) ? ISS_ON : ISS_OFF);
 
-	IUFillSwitchVector(ReadOutSP, ReadOutS, 3, getDeviceName(),
+	IUFillSwitchVector(&ReadOutSP, ReadOutS, 3, getDeviceName(),
 			   "READOUT_SPEED", "Readout Speed",
 			   IMAGE_SETTINGS_TAB, IP_WO, ISR_1OFMANY, 0, IPS_IDLE);
 
-	GetFilterNames(FILTER_TAB);
+	initFilterProperties(getDeviceName(), FILTER_TAB);
+
+	setInterfaceDescriptor(getInterfaceDescriptor() | FILTER_INTERFACE);
 
 	return true;
+
+#if 0
+	IUFillNumber(&GainOffsetN[0], "QHY_GAIN",   "Gain",   "%3.0f", 0, 255, 0, Gain);
+	IUFillNumber(&GainOffsetN[1], "QHY_OFFSET", "Offset", "%3.0f", 0, 255, 0, Offset);
+	IUFillNumberVector(GainOffsetSetNV, &GainOffsetN[0], 2, getDeviceName(),
+			   "QHY_SETTINGS", "QHY Settings", IMAGE_SETTINGS_TAB,
+			   IP_RW, 60, IPS_IDLE);
+
+	if (HasTemperatureControl) {
+		/* FIXME: this is ugly, with the 3 groups, but e.g. xephem sends all values in a group when setting, so
+		   trying to avoid overwriting temp setpoint with current temp for instance */
+
+		TemperatureSetNV = new INumberVectorProperty();
+		IUFillNumber(&TemperatureN[0], "CCD_TEMPERATURE_VALUE", "Temp. Setpoint (degC)", "%4.2f", -50, 50, 0, TemperatureTarget);
+		IUFillNumberVector(TemperatureSetNV, &TemperatureN[0], 1, getDeviceName(), "CCD_TEMPERATURE", "Temperature", "Main Control", IP_RW, 60, IPS_IDLE);
+
+		TempPWMSetNV = new INumberVectorProperty();
+		IUFillNumber(&TemperatureN[1], "CCD_TEC_PWM_LIMIT_VALUE", "TEC Power limit (%)", "%3.0f", 0, 100, 0, TEC_PWMLimit);
+		IUFillNumberVector(TempPWMSetNV, &TemperatureN[1], 1, getDeviceName(), "CCD_TEC_PWM_LIMIT", "TEC Power", "Main Control", IP_RW, 60, IPS_IDLE);
+
+		TemperatureGetNV = new INumberVectorProperty();
+		IUFillNumber(&TemperatureN[2], "CCD_TEMPERATURE_CURRENT_VALUE", "Temperature (degC)", "%4.2f", -50, 50, 0, Temperature);
+		IUFillNumber(&TemperatureN[3], "CCD_TEC_PWM_CURRENT_VALUE", "TEC Power (%)", "%3.0f", 0, 100, 0, TEC_PWM);
+		IUFillNumberVector(TemperatureGetNV, &TemperatureN[2], 2, getDeviceName(), "CCD_TEMPERATURE_INFO", "Temperature", "Temperature Info", IP_RO, 60, IPS_IDLE);
+	}
+
+	if (HasFilterWheel)
+		initFilterProperties(getDeviceName(), FILTER_TAB);
+#endif
+
+
 }
 
 bool QHY9::updateProperties()
 {
-	QHYCCD::updateProperties();
-
-	SetCCDParams(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT, 16, 5.4, 5.4);
+	INDI::CCD::updateProperties();
 
 	if (isConnected()) {
-		defineSwitch(ReadOutSP);
+		defineSwitch(&ReadOutSP);
 
+		SetCCDParams(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT, 16, 5.4, 5.4);
+
+
+#if 0
 		if (FilterNameT != NULL) {
 			defineText(FilterNameTP);
 			defineNumber(&FilterSlotNP);
 		}
+#endif
 
 	}
 
 	return true;
+
+#if 0
+
+	if (isConnected()) {
+		if (HasTemperatureControl) {
+			defineNumber(TemperatureSetNV);
+			defineNumber(TempPWMSetNV);
+			defineNumber(TemperatureGetNV);
+		}
+
+		if (HasFilterWheel) {
+			defineText(FilterNameTP);
+			defineNumber(&FilterSlotNP);
+		}
+
+		defineNumber(GainOffsetSetNV);
+	}
+#endif
+
+
+
 }
 
-int QHY9::StartExposure(float duration)
+bool QHY9::StartExposure(float duration)
 {
 	CCDChip::CCD_FRAME type;
 
 	if (InExposure)
-		return -1;
+		return false;
 
 	type = PrimaryCCD.getFrameType();
 
@@ -81,7 +316,7 @@ int QHY9::StartExposure(float duration)
 	   This is useful for the load/save config feature of INDI drivers,
 	   so they won't trigger an exposure when loading config */
 	if (type != CCDChip::BIAS_FRAME && duration == 0.0)
-		return 1;
+		return false;
 
 	Exptime = duration * 1000;
 
@@ -100,8 +335,7 @@ int QHY9::StartExposure(float duration)
 
 	beginVideo();
 
-	// 0 - exp. running on timers, 1 short exposures already done,  -1 error
-	return 0;
+	return true;
 }
 
 bool QHY9::AbortExposure()
@@ -137,7 +371,7 @@ bool QHY9::GrabExposure()
 		buffer = (uint16_t *) malloc(bufsize);
 	}
 
-	fprintf(stderr, "expecting: p_size %d, total_p %d, bufsize %d\n",
+	fprintf(stderr, "expecting: p_size %d, total_p %d, bufsize %zd\n",
 		p_size, total_p, bufsize);
 
 	if (bulk_transfer_read(QHY9_DATA_BULK_EP, (uint8_t *) buffer, p_size, total_p, &pos))
@@ -408,11 +642,98 @@ void QHY9::setCameraRegisters()
 				QHY9_REGISTERS_CMD, 0, 0, REG, 64, 0);
 }
 
+bool QHY9::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
+{
+#if 0
+	double v;
+	INumber *np;
+
+	fprintf(stderr, "ISNEWNUMBER dev %s, device %s, name %s\n\n", dev, getDeviceName(), name);
+	if (dev && !strcmp(dev, getDeviceName())) {
+		if (HasTemperatureControl && !strcmp(name, "CCD_TEMPERATURE")) {
+			if (n < 1) return false;
+
+			v = clamp_double(values[0], -50, 50);
+
+			TemperatureTarget = v;
+			TemperatureN[0].value = v;
+			TemperatureSetNV->s = IPS_OK;
+			IDSetNumber(TemperatureSetNV, NULL);
+
+			return true;
+		}
+
+		if (HasTemperatureControl && !strcmp(name, "CCD_TEC_PWM_LIMIT")) {
+			if (n < 1) return false;
+
+			v = clamp_double(values[0], 0, 90);
+
+			TEC_PWMLimit = v;
+			TemperatureN[1].value = v;
+			TempPWMSetNV->s = IPS_OK;
+			IDSetNumber(TempPWMSetNV, NULL);
+
+			return true;
+		}
+
+		if (HasFilterWheel && !strcmp(name, FilterSlotNP.name)) {
+			TargetFilter = values[0];
+
+			np = IUFindNumber(&FilterSlotNP, names[0]);
+
+			if (!np) {
+				FilterSlotNP.s = IPS_ALERT;
+				IDSetNumber(&FilterSlotNP, "Unknown error. %s is not a member of %s property.", names[0], name);
+				return false;
+			}
+
+			if (TargetFilter < MinFilter || TargetFilter > MaxFilter) {
+				FilterSlotNP.s = IPS_ALERT;
+				IDSetNumber(&FilterSlotNP, "Error: valid range of filter is from %d to %d", MinFilter, MaxFilter);
+				return false;
+			}
+
+			IUUpdateNumber(&FilterSlotNP, values, names, n);
+
+			SelectFilter(TargetFilter);
+
+			FilterSlotN[0].value = TargetFilter;
+			FilterSlotNP.s = IPS_OK;
+			IDSetNumber(&FilterSlotNP, "Setting current filter to slot %d", TargetFilter);
+
+			return true;
+		}
+
+		if (!strcmp(name, GainOffsetSetNV->name)) {
+			if (n < 2)
+				return false;
+
+			Gain   = GainOffsetN[0].value = clamp_int(values[0], 0, 255);
+			Offset = GainOffsetN[1].value = clamp_int(values[1], 0, 255);
+
+			GainOffsetSetNV->s = IPS_OK;
+			IDSetNumber(GainOffsetSetNV, NULL);
+
+			return true;
+		}
+	}
+#endif
+
+	if (dev && !strcmp(dev, getDeviceName())) {
+		if (!strcmp(name, FilterSlotNP.name)) {
+			processFilterSlot(dev, values, names);
+			return true;
+		}
+	}
+
+	return INDI::CCD::ISNewNumber(dev, name, values, names, n);
+}
+
 bool QHY9::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
 	if (dev && !strcmp(dev, getDeviceName())) {
-		if (!strcmp(name, ReadOutSP->name)) {
-			if (IUUpdateSwitch(ReadOutSP, states, names, n) < 0)
+		if (!strcmp(name, ReadOutSP.name)) {
+			if (IUUpdateSwitch(&ReadOutSP, states, names, n) < 0)
 				return false;
 
 			if (ReadOutS[0].s == ISS_ON)
@@ -424,8 +745,8 @@ bool QHY9::ISNewSwitch(const char *dev, const char *name, ISState *states, char 
 			if (ReadOutS[2].s == ISS_ON)
 				DownloadSpeed = 2;
 
-                        ReadOutSP->s = IPS_OK;
-			IDSetSwitch(ReadOutSP, NULL);
+                        ReadOutSP.s = IPS_OK;
+			IDSetSwitch(&ReadOutSP, NULL);
 
 			IDMessage(dev, "readout speed %d", DownloadSpeed);
 
@@ -433,8 +754,22 @@ bool QHY9::ISNewSwitch(const char *dev, const char *name, ISState *states, char 
 		}
         }
 
-	return QHYCCD::ISNewSwitch(dev, name, states, names, n);
+	return CCD::ISNewSwitch(dev, name, states, names, n);
 }
+
+bool QHY9::ISNewText (const char *dev, const char *name, char *texts[], char *names[], int n)
+{
+	if (dev && !strcmp(dev, getDeviceName())) {
+		if (!strcmp(name, FilterNameTP->name)) {
+			processFilterName(dev, texts, names, n);
+			return true;
+		}
+	}
+
+	return INDI::CCD::ISNewText(dev, name, texts, names, n);
+}
+
+
 
 void QHY9::beginVideo()
 {
@@ -460,11 +795,6 @@ void QHY9::setShutter(int mode)
 				QHY9_SHUTTER_CMD, 0, 0, buffer, 1, 0);
 }
 
-bool QHY9::SetFilterNames()
-{
-	return true;
-}
-
 bool QHY9::SelectFilter(int slot)
 {
 	uint8_t buffer[2];
@@ -484,9 +814,21 @@ bool QHY9::SelectFilter(int slot)
 	return true;
 }
 
+
 int QHY9::QueryFilter()
 {
 	return CurrentFilter;
+}
+
+/* hw can't save filter names */
+bool QHY9::SetFilterNames()
+{
+	return false;
+}
+
+bool QHY9::GetFilterNames(const char *groupName)
+{
+	return false;
 }
 
 /* FIXME: This needs some TLC, this "regulator" oscillates and swings +/- 1.5 deg */
@@ -525,15 +867,96 @@ void QHY9::TempControlTimer()
 		TemperatureN[2].value = Temperature;
 		TemperatureN[3].value = TEC_PWM * 100 / 256;
 
-		TemperatureGetNV->s = IPS_OK;
+		TemperatureGetNV.s = IPS_OK;
 
 		counter++;
 		if ((counter >= 2) && isConnected()) {
-			IDSetNumber(TemperatureGetNV, NULL);
+			IDSetNumber(&TemperatureGetNV, NULL);
 			counter = 0;
 		}
 
 		//fprintf(stderr, "volt %.2f, temp %.2f, target %.2f, PWM %d\n",
 		//	voltage, Temperature, TemperatureTarget, TEC_PWM);
 	}
+}
+
+int QHY9::bulk_transfer_read(int ep, unsigned char *data, int psize, int pnum, int *pos)
+{
+	int ret, length_transfered;
+        int i;
+
+        for (i = 0; i < pnum; ++i) {
+                length_transfered = 0;
+
+                ret = libusb_bulk_transfer(usb_handle ,ep, data + i * psize, psize, &length_transfered, 0);
+                if (ret < 0 || length_transfered != psize) {
+                        fprintf(stderr, "bulk_transfer %d, %d\n", ret, length_transfered);
+                        return -1;
+                }
+                *pos = i;
+        }
+
+        return 0;
+}
+
+
+
+void QHY9::addFITSKeywords(fitsfile *fptr, CCDChip *chip)
+{
+#if 0
+	static char obsdata[128];
+	float exposure;
+	struct tm *dobs;
+	int status = 0;
+
+	/* Date of observation, includes time */
+	dobs = gmtime(&exposure_start.tv_sec);
+	snprintf(obsdata, 32, "%04d-%02d-%02dT%02d:%02d:%02d.%03d",
+		 1900 + dobs->tm_year, 1 + dobs->tm_mon, dobs->tm_mday,
+		 dobs->tm_hour, dobs->tm_min, dobs->tm_sec,
+		 (int) (exposure_start.tv_usec / 1000));
+
+	fits_write_key(fptr, TSTRING, "DATE-OBS", obsdata, "Date of start of observation, UTC", &status);
+
+	/* Time of observation for compatibility */
+	snprintf(obsdata, 32, "%02d:%02d:%02d.%03d",
+		 dobs->tm_hour, dobs->tm_min, dobs->tm_sec,
+		 (int) (exposure_start.tv_usec / 1000));
+	fits_write_key(fptr, TSTRING, "TIME-OBS", obsdata, "Time of start of observation, UTC", &status);
+
+	/* Exposure time */
+	exposure = Exptime / 1000.0;
+	fits_write_key(fptr, TFLOAT, "EXPTIME", &exposure, "Exposure time in seconds", &status);
+
+	/* Binning */
+	fits_write_key(fptr, TBYTE, "CCDBIN1", &HBIN, "CCD BIN X", &status);
+	fits_write_key(fptr, TBYTE, "CCDBIN2", &VBIN, "CCD BIN Y", &status);
+
+	/* Gain */
+	fits_write_key(fptr, TBYTE, "QHYGAIN", &Gain, "CCD Gain, 0..255", &status);
+
+	/* Offset */
+	fits_write_key(fptr, TBYTE, "QHYBIAS", &Offset, "CCD Offset", &status);
+
+	/* Readout speed */
+	fits_write_key(fptr, TBYTE, "QHYSPEED", &DownloadSpeed, "CCD readout speed", &status);
+
+	/* CLAMP */
+	fits_write_key(fptr, TBYTE, "QHYCLAMP", &CLAMP, "CCD clamp, on/off", &status);
+
+
+	/* CCD Temperature */
+	if (HasTemperatureControl) {
+		fits_write_key(fptr, TDOUBLE, "CCDTEMP", &Temperature, "CCD temperature, degC", &status);
+		fits_write_key(fptr, TDOUBLE, "CCDTSET", &TemperatureTarget, "CCD set temperature, degC", &status);
+	}
+
+	/* Filters */
+	if (HasFilterWheel) {
+		void *fname = (void *) filterDesignation[CurrentFilter - 1].c_str();
+
+		fits_write_key(fptr, TSTRING, "FILTER", fname, "Filter name", &status);
+		fits_write_key(fptr, TINT, "FLT-SLOT", &CurrentFilter, "Filter slot", &status);
+	}
+#endif
 }
