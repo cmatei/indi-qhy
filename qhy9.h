@@ -64,12 +64,14 @@ public:
 	/* Device */
 	const char *getDefaultName() { return (char *) "QHY9"; }
 
-	bool initProperties();
-	bool updateProperties();
-
+	void ISGetProperties(const char *dev);
 	bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n);
 	bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n);
 	bool ISNewText (const char *dev, const char *name, char *texts[], char *names[], int n);
+
+	bool initProperties();
+	bool updateProperties();
+	bool saveConfigItems(FILE *fp);
 
 	/* CCD Interface */
 	bool Connect();
@@ -92,6 +94,8 @@ protected:
 	void TempControlTimer();
 
 private:
+	bool sim;			     /* simulation mode */
+
 	void   TimerHit();
 
 	libusb_device_handle *usb_handle;	 /* USB device handle */
