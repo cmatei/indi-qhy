@@ -19,10 +19,6 @@
 
 #include <libusb-1.0/libusb.h>
 
-#define QHYCCD_TIMER (1 * 1000)
-
-#define QHYCCD_MAX_FILTERS 5
-
 enum {
 	SHUTTER_OPEN = 0,
 	SHUTTER_CLOSE,
@@ -31,6 +27,8 @@ enum {
 
 #define QHY9_SENSOR_WIDTH  3584
 #define QHY9_SENSOR_HEIGHT 2574
+
+#define QHY9_MAX_FILTERS 5
 
 #define QHY9_USB_DEVID 0x16188301
 
@@ -59,8 +57,6 @@ public:
 	QHY9();
 	~QHY9() {}
 
-	void initCamera();
-
 	/* Device */
 	const char *getDefaultName() { return (char *) "QHY9"; }
 
@@ -81,6 +77,11 @@ public:
 	bool AbortExposure();
 	bool GrabExposure();
 
+	int  SetTemperature(double temperature);
+
+	bool UpdateCCDFrame(int x, int y, int w, int h);
+	bool UpdateCCDBin(int binx, int biny);
+
 	void addFITSKeywords(fitsfile *fptr, CCDChip *chip);
 
 	/* Filter wheel Interface */
@@ -90,22 +91,22 @@ public:
 	bool GetFilterNames(const char *groupName);
 
 protected:
+	void TimerHit();
 
-	void TempControlTimer();
+	int pollTimer;
 
-private:
-	bool sim;			     /* simulation mode */
-
-	void   TimerHit();
+	bool sim;			         /* simulation mode */
 
 	libusb_device_handle *usb_handle;	 /* USB device handle */
 
-	struct timeval        exposure_start;	 /* used by the timer to call ExposureComplete() */
+	struct timeval exposure_start;	 /* used by the timer to call ExposureComplete() */
+	double ExposureRequest;
+	double calcTimeLeft();
 
 	/* Temperature control */
-	bool    HasTemperatureControl;
 	double  TemperatureTarget;		 /* temperature setpoint in degC */
 	double  Temperature;		         /* current temperature in degC */
+	double  T_env;
 	int     TEC_PWMLimit;		         /* 0..100, TEC power limit */
 	int     TEC_PWM;		         /* current TEC power */
 	INumber TemperatureN[4];
@@ -170,6 +171,8 @@ private:
 	void abortVideo();
 
 	void setShutter(int mode);
+
+	void updateTemperature();
 };
 
 /* Utility functions */

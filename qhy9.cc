@@ -1,54 +1,45 @@
 
 #include "qhy9.h"
 
+
+#define POLLMS 1000
+#define MINIMUM_CCD_EXPOSURE 0.001
+
+
 static QHY9 *camera = NULL;
 
-void initialize()
+static QHY9 *initialize()
 {
-	if (camera)
-		return;
-
-	camera = new QHY9();
+	if (!camera)
+		camera = new QHY9();
+	return camera;
 }
-
 
 void ISGetProperties(const char *dev)
 {
-	initialize();
-
-	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
+	if (!initialize() || (dev && strcmp(dev, camera->getDeviceName())))
 		return;
-
 	camera->ISGetProperties(dev);
 }
 
 void ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-	initialize();
-
-	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
+	if (!initialize() || (dev && strcmp(dev, camera->getDeviceName())))
 		return;
-
 	camera->ISNewSwitch(dev, name, states, names, n);
 }
 
 void ISNewText (const char *dev, const char *name, char *texts[], char *names[], int n)
 {
-	initialize();
-
-	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
+	if (!initialize() || (dev && strcmp(dev, camera->getDeviceName())))
 		return;
-
 	camera->ISNewText(dev, name, texts, names, n);
 }
 
 void ISNewNumber (const char *dev, const char *name, double values[], char *names[], int n)
 {
-	initialize();
-
-	if (!camera || (dev && strcmp(dev, camera->getDeviceName())))
+	if (!initialize() || (dev && strcmp(dev, camera->getDeviceName())))
 		return;
-
 	camera->ISNewNumber(dev, name, values, names, n);
 }
 
@@ -66,8 +57,10 @@ void ISNewBLOB (const char *dev, const char *name, int sizes[], int blobsizes[],
 
 void ISSnoopDevice (XMLEle *root)
 {
-	INDI_UNUSED(root);
+	if (initialize())
+		camera->ISSnoopDevice(root);
 }
+
 
 
 QHY9::QHY9()
@@ -88,8 +81,10 @@ QHY9::QHY9()
 
 	SetCCDCapability(&cap);
 
-	TemperatureTarget = 50.0;
-	Temperature = 50.0;
+#if 1
+	T_env = 25.0;
+	TemperatureTarget = T_env;
+	Temperature = T_env;;
 	TEC_PWM = 0;
 	TEC_PWMLimit = 80;
 
@@ -102,80 +97,12 @@ QHY9::QHY9()
 
 	// default to slowest readout
 	DownloadSpeed = 2;
+#endif
 
-	// sim = false
+	sim = false;
 }
 
 
-bool QHY9::Connect()
-{
-	libusb_device **devices;
-	libusb_device *dev;
-	struct libusb_device_descriptor desc;
-	unsigned int devID;
-	int i, n;
-
-	/* already connected ? */
-	if (usb_handle)
-		return true;
-
-	if (libusb_init(NULL))
-		return false;
-
-	n = libusb_get_device_list(NULL, &devices);
-	for (i = 0; i < n; i++) {
-		dev = devices[i];
-
-		if (libusb_get_device_descriptor(dev, &desc) < 0)
-			continue;
-
-		devID = (desc.idVendor << 16) + desc.idProduct;
-		if (devID == QHY9_USB_DEVID) {
-
-			libusb_ref_device(dev);
-			SetTimer(QHYCCD_TIMER);
-
-			libusb_free_device_list(devices, 1);
-
-			return true;
-		}
-	}
-
-	libusb_free_device_list(devices, 1);
-
-	return true;
-}
-
-
-bool QHY9::Disconnect()
-{
-	if (usb_handle) {
-		libusb_close(usb_handle);
-		usb_handle = NULL;
-	}
-
-	libusb_exit(NULL);
-
-	return true;
-}
-
-
-void QHY9::TimerHit()
-{
-	struct timeval now;
-
-	if (!isConnected())
-		return;
-
-	gettimeofday(&now, NULL);
-	if (InExposure && tv_diff(&now, &exposure_start) >= (long) Exptime)
-		GrabExposure();
-
-	if (HasTemperatureControl)
-		TempControlTimer();
-
-	SetTimer(QHYCCD_TIMER);
-}
 
 bool QHY9::initProperties()
 {
@@ -183,7 +110,7 @@ bool QHY9::initProperties()
 	initFilterProperties(getDeviceName(), FILTER_TAB);
 
 	FilterSlotN[0].min = 1;
-	FilterSlotN[0].max = 5;
+	FilterSlotN[0].max = QHY9_MAX_FILTERS;
 
 	/* Readout speed */
 	IUFillSwitch(&ReadOutS[0], "READOUT_FAST",   "Fast",   (DownloadSpeed == 0) ? ISS_ON : ISS_OFF);
@@ -213,7 +140,7 @@ bool QHY9::initProperties()
 			   MAIN_CONTROL_TAB, IP_RO, 60, IPS_IDLE);
 
 
-	PrimaryCCD.setMinMaxStep("CCD_EXPOSURE", "CCD_EXPOSURE_VALUE", 0.001, 3600, 1, false);
+	PrimaryCCD.setMinMaxStep("CCD_EXPOSURE", "CCD_EXPOSURE_VALUE", MINIMUM_CCD_EXPOSURE, 3600, 1, false);
 
 	addAuxControls();
 
@@ -244,6 +171,7 @@ bool QHY9::updateProperties()
 		defineSwitch(&ReadOutSP);
 
 		defineNumber(&GainOffsetSetNV);
+
 		defineNumber(&TemperatureSetNV);
 		defineNumber(&TempPWMSetNV);
 		defineNumber(&TemperatureGetNV);
@@ -253,37 +181,139 @@ bool QHY9::updateProperties()
 		defineText(FilterNameTP);
 
 		SetCCDParams(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT, 16, 5.4, 5.4);
+
+		pollTimer = SetTimer(POLLMS);
 	} else {
 		deleteProperty(ReadOutSP.name);
 		deleteProperty(GainOffsetSetNV.name);
 		deleteProperty(TemperatureSetNV.name);
 		deleteProperty(TempPWMSetNV.name);
 		deleteProperty(TemperatureGetNV.name);
+
+		RemoveTimer(pollTimer);
 	}
 
 	return true;
+}
+
+
+bool QHY9::Connect()
+{
+	libusb_device **devices;
+	libusb_device *dev;
+	struct libusb_device_descriptor desc;
+	unsigned int devID;
+	int i, n;
+
+	/* already connected ? */
+	if (usb_handle)
+		return true;
+
+	if (libusb_init(NULL))
+		return false;
+
+	n = libusb_get_device_list(NULL, &devices);
+	for (i = 0; i < n; i++) {
+		dev = devices[i];
+
+		if (libusb_get_device_descriptor(dev, &desc) < 0)
+			continue;
+
+		devID = (desc.idVendor << 16) + desc.idProduct;
+		if (devID == QHY9_USB_DEVID) {
+
+			libusb_ref_device(dev);
+			libusb_free_device_list(devices, 1);
+
+			return true;
+		}
+	}
+
+	libusb_free_device_list(devices, 1);
+
+	return true;
+}
+
+
+bool QHY9::Disconnect()
+{
+	if (usb_handle) {
+		libusb_close(usb_handle);
+		usb_handle = NULL;
+
+		libusb_exit(NULL);
+	}
+
+	return true;
+}
+
+double QHY9::calcTimeLeft()
+{
+	struct timeval now;
+	double timeLeft;
+
+	gettimeofday(&now, NULL);
+	timeLeft = ExposureRequest - tv_diff(&now, &exposure_start) / 1000.0;
+
+	return (timeLeft > 0.0) ? timeLeft : 0.0;
+}
+
+void QHY9::TimerHit()
+{
+	double timeLeft;
+
+	if (!isConnected())
+		return;
+
+	if (InExposure) {
+		timeLeft = calcTimeLeft();
+		PrimaryCCD.setExposureLeft(timeLeft);
+
+		if (timeLeft < 1.0) {
+			if (timeLeft > 0.25) {
+				pollTimer = SetTimer(250);
+			} else if (timeLeft > 0.07) {
+				pollTimer = SetTimer(50);
+			} else {
+				PrimaryCCD.setExposureLeft(0);
+				InExposure = false;
+				GrabExposure();
+
+				pollTimer = SetTimer(POLLMS);
+			}
+		}
+	} else {
+		pollTimer = SetTimer(POLLMS);
+	}
+
+	updateTemperature();
+}
+
+int QHY9::SetTemperature(double temperature)
+{
+	TemperatureTarget = temperature;
+	return 0;
 }
 
 bool QHY9::StartExposure(float duration)
 {
 	CCDChip::CCD_FRAME type;
 
-//	if (InExposure)
-//		return false;
+	if (duration < MINIMUM_CCD_EXPOSURE)
+		duration = MINIMUM_CCD_EXPOSURE;
 
 	type = PrimaryCCD.getFrameType();
 
-	/* 0 sec exposures are not done for anything but BIAS.
-	   This is useful for the load/save config feature of INDI drivers,
-	   so they won't trigger an exposure when loading config */
-	if (type != CCDChip::BIAS_FRAME && duration == 0.0)
-		return false;
+	if (type == CCDChip::BIAS_FRAME)
+		duration = MINIMUM_CCD_EXPOSURE;
 
-	Exptime = duration * 1000;
+	DEBUGF(INDI::Logger::DBG_SESSION, "Exposure set to %.3f ms", duration * 1000);
+
+	ExposureRequest = duration * 1000;
+	PrimaryCCD.setExposureDuration(duration);
 
 	setCameraRegisters();
 	usleep(100000);
-
 
 	if (type == CCDChip::DARK_FRAME || type == CCDChip::BIAS_FRAME) {
 		//fprintf(stderr, "SHOOTING A DARK, CLOSING SHUTTER\n");
@@ -301,15 +331,39 @@ bool QHY9::StartExposure(float duration)
 
 bool QHY9::AbortExposure()
 {
+	if (!InExposure || sim) {
+		InExposure = false;
+		return true;
+	}
+
 // FIXME: if camera still locks on exposure transfer, check if we can still abort
 // or the camera is dead
-//	if (!InExposure)
-//		return true;
 
 	abortVideo();
 	InExposure = false;
 
+	DEBUG(INDI::Logger::DBG_SESSION, "Exposure aborted.");
+
 	return true;
+}
+
+bool QHY9::UpdateCCDFrame(int x, int y, int w, int h)
+{
+
+	return false;
+}
+
+bool QHY9::UpdateCCDBin(int hbin, int vbin)
+{
+	if (hbin < 1 || hbin > 4 || vbin != hbin)
+		return false;
+
+	// camxbin = hbin
+	// camybin = vbin
+
+	PrimaryCCD.setBin(hbin, vbin);
+
+	return UpdateCCDFrame(PrimaryCCD.getSubX(), PrimaryCCD.getSubY(), PrimaryCCD.getSubW(), PrimaryCCD.getSubH());
 }
 
 
@@ -620,7 +674,7 @@ bool QHY9::ISNewNumber(const char *dev, const char *name, double values[], char 
 
 	fprintf(stderr, "ISNEWNUMBER dev %s, device %s, name %s\n\n", dev, getDeviceName(), name);
 	if (dev && !strcmp(dev, getDeviceName())) {
-		if (HasTemperatureControl && !strcmp(name, "CCD_TEMPERATURE")) {
+		if (!strcmp(name, "CCD_TEMPERATURE")) {
 			if (n < 1) return false;
 
 			v = clamp_double(values[0], -50, 50);
@@ -633,7 +687,7 @@ bool QHY9::ISNewNumber(const char *dev, const char *name, double values[], char 
 			return true;
 		}
 
-		if (HasTemperatureControl && !strcmp(name, "CCD_TEC_PWM_LIMIT")) {
+		if (!strcmp(name, "CCD_TEC_PWM_LIMIT")) {
 			if (n < 1) return false;
 
 			v = clamp_double(values[0], 0, 90);
@@ -646,7 +700,7 @@ bool QHY9::ISNewNumber(const char *dev, const char *name, double values[], char 
 			return true;
 		}
 
-		if (HasFilterWheel && !strcmp(name, FilterSlotNP.name)) {
+		if (!strcmp(name, FilterSlotNP.name)) {
 			TargetFilter = values[0];
 
 			np = IUFindNumber(&FilterSlotNP, names[0]);
@@ -846,54 +900,63 @@ bool QHY9::GetFilterNames(const char *groupName)
 	return true;
 }
 
-/* FIXME: This needs some TLC, this "regulator" oscillates and swings +/- 1.5 deg */
-void QHY9::TempControlTimer()
+void QHY9::updateTemperature()
 {
-	static bool alternate = false;	     // first time, read
-	static double voltage = 0.0;
-	static int counter = 0;
-	static int divider = 0;
+	double kp = 1.4, ki = 0.5;	     // PI gains
+	double pwm;
+	static double error = 0.0, integral = 0.0, deriv = 0.0;
 
-	if (++divider > 1) {
-		divider = 0;
-		return;
-	}
+	if (true) {
+		// this would be steady state if full power provides -100C delta
+		double steady = T_env - 100.0 * (TEC_PWM / 256.0);
 
+		if (Temperature < steady)
+			Temperature += fabs((steady - Temperature)) / 10;
+		else
+			Temperature -= fabs((steady - Temperature)) / 10;
 
-	alternate = !alternate;
-
-	if (alternate) {
-		voltage = getDC201Interrupt();
-		Temperature = mv_to_degrees(1.024 * voltage);
 	} else {
-		if (Temperature > TemperatureTarget + 5)
-			TEC_PWM += 5;
-		else if (Temperature < TemperatureTarget - 5)
-			TEC_PWM -= 5;
-		else if (Temperature > TemperatureTarget + 0.7)
-			TEC_PWM += 1;
-		else if (Temperature < TemperatureTarget - 0.7)
-			TEC_PWM -= 1;
-
-		TEC_PWM = clamp_int(TEC_PWM, 0, TEC_PWMLimit * 256 / 100);
-
-		setDC201Interrupt(TEC_PWM, 255);
-
-		TemperatureN[2].value = Temperature;
-		TemperatureN[3].value = TEC_PWM * 100 / 256;
-
-		TemperatureGetNV.s = IPS_OK;
-
-		counter++;
-		if ((counter >= 2) && isConnected()) {
-			IDSetNumber(&TemperatureGetNV, NULL);
-			counter = 0;
-		}
-
-		//fprintf(stderr, "volt %.2f, temp %.2f, target %.2f, PWM %d\n",
-		//	voltage, Temperature, TemperatureTarget, TEC_PWM);
+		Temperature = mv_to_degrees(1.024 * getDC201Interrupt());
 	}
+
+	deriv = (TemperatureTarget - Temperature) / -100.0 - error;
+	error = (TemperatureTarget - Temperature) / -100.0;
+
+	// anti-windup
+	integral = clamp_double(integral + error, -2.0, 2.0);
+
+	pwm = clamp_double(255.0 * (kp * error + ki * integral), 0.0, 255.0);
+
+	fprintf(stderr, "temp %.6f, target %.6f, PWM %.f, err %.6f, int %.6f, der %.6f\n",
+		Temperature, TemperatureTarget, pwm, error, integral, deriv);
+
+#if 0
+	if (Temperature > TemperatureTarget + 5)
+		TEC_PWM += 5;
+	else if (Temperature < TemperatureTarget - 5)
+		TEC_PWM -= 5;
+	else if (Temperature > TemperatureTarget + 0.7)
+		TEC_PWM += 1;
+	else if (Temperature < TemperatureTarget - 0.7)
+		TEC_PWM -= 1;
+
+#endif
+
+	TEC_PWM = clamp_int((int) pwm, 0, TEC_PWMLimit * 255 / 100);
+
+	setDC201Interrupt(TEC_PWM, 255);
+
+	TemperatureN[2].value = Temperature;
+	TemperatureN[3].value = TEC_PWM * 100 / 256;
+
+	TemperatureGetNV.s = IPS_OK;
+
+	//fprintf(stderr, "volt %.2f, temp %.2f, target %.2f, PWM %d\n",
+	//	voltage, Temperature, TemperatureTarget, TEC_PWM);
+
+	IDSetNumber(&TemperatureGetNV, NULL);
 }
+
 
 int QHY9::bulk_transfer_read(int ep, unsigned char *data, int psize, int pnum, int *pos)
 {
