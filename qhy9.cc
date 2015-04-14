@@ -4,7 +4,7 @@
 
 #define POLLMS 1000
 #define MINIMUM_CCD_EXPOSURE 0.001
-
+#define TEMPERATURE_THRESHOLD 0.1
 
 static QHY9 *camera = NULL;
 
@@ -81,15 +81,13 @@ QHY9::QHY9()
 
 	SetCCDCapability(&cap);
 
-#if 1
-	T_env = 25.0;
-	TemperatureTarget = T_env;
-	Temperature = T_env;;
-	TEC_PWM = 0;
-	TEC_PWMLimit = 80;
+	TemperatureTarget = 50;
+	Temperature = 0;
+	TECValue = 0;
+	TECLimit = 80;
 
-	Gain = 20;
-	Offset = 120;
+	camgain = Gain = 20;
+	camoffset = Offset = 120;
 	CLAMP = 0;
 	MechanicalShutterMode = 0;
 	DownloadCloseTEC = 1;
@@ -97,9 +95,6 @@ QHY9::QHY9()
 
 	// default to slowest readout
 	DownloadSpeed = 2;
-#endif
-
-	sim = false;
 }
 
 
@@ -112,6 +107,8 @@ bool QHY9::initProperties()
 	FilterSlotN[0].min = 1;
 	FilterSlotN[0].max = QHY9_MAX_FILTERS;
 
+	PrimaryCCD.setResolution(QHY9_SENSOR_WIDTH, QHY9_SENSOR_HEIGHT);
+
 	/* Readout speed */
 	IUFillSwitch(&ReadOutS[0], "READOUT_FAST",   "Fast",   (DownloadSpeed == 0) ? ISS_ON : ISS_OFF);
 	IUFillSwitch(&ReadOutS[1], "READOUT_NORMAL", "Normal", (DownloadSpeed == 1) ? ISS_ON : ISS_OFF);
@@ -119,26 +116,25 @@ bool QHY9::initProperties()
 	IUFillSwitchVector(&ReadOutSP, ReadOutS, 3, getDeviceName(), "READOUT_SPEED", "Readout Speed",
 			   IMAGE_SETTINGS_TAB, IP_WO, ISR_1OFMANY, 0, IPS_IDLE);
 
-	/* Gain & Offset */
-	IUFillNumber(&GainOffsetN[0], "QHY_GAIN",   "Gain",   "%3.0f", 0, 255, 0, Gain);
-	IUFillNumber(&GainOffsetN[1], "QHY_OFFSET", "Offset", "%3.0f", 0, 255, 0, Offset);
-	IUFillNumberVector(&GainOffsetSetNV, &GainOffsetN[0], 2, getDeviceName(), "QHY_SETTINGS", "QHY Settings",
+	// Gain
+	IUFillNumber(&GainN[0], "GAIN",   "Gain",   "%3.0f", 0, 255, 0, Gain);
+	IUFillNumberVector(&GainNP, &GainN[0], 1, getDeviceName(), "CCD_GAIN", "CCD Gain",
 			   IMAGE_SETTINGS_TAB, IP_RW, 60, IPS_IDLE);
 
-	/* Temperature */
-	IUFillNumber(&TemperatureN[0], "CCD_TEMPERATURE_VALUE", "Temp. Setpoint (degC)", "%4.2f", -50, 50, 0, TemperatureTarget);
-	IUFillNumberVector(&TemperatureSetNV, &TemperatureN[0], 1, getDeviceName(), "CCD_TEMPERATURE", "Temperature",
-			   MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
+	// Offset
+	IUFillNumber(&OffsetN[0], "OFFSET",   "Offset",   "%3.0f", 0, 255, 0, Offset);
+	IUFillNumberVector(&OffsetNP, &OffsetN[0], 1, getDeviceName(), "CCD_OFFSET", "CCD Offset",
+			   IMAGE_SETTINGS_TAB, IP_RW, 60, IPS_IDLE);
 
-	IUFillNumber(&TemperatureN[1], "CCD_TEC_PWM_LIMIT_VALUE", "TEC Power limit (%)", "%3.0f", 0, 100, 0, TEC_PWMLimit);
-	IUFillNumberVector(&TempPWMSetNV, &TemperatureN[1], 1, getDeviceName(), "CCD_TEC_PWM_LIMIT", "TEC Power",
-			   MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
-
-	IUFillNumber(&TemperatureN[2], "CCD_TEMPERATURE_CURRENT_VALUE", "Temperature (degC)", "%4.2f", -50, 50, 0, Temperature);
-	IUFillNumber(&TemperatureN[3], "CCD_TEC_PWM_CURRENT_VALUE", "TEC Power (%)", "%3.0f", 0, 100, 0, TEC_PWM);
-	IUFillNumberVector(&TemperatureGetNV, &TemperatureN[2], 2, getDeviceName(), "CCD_TEMPERATURE_INFO", "Current Temperature",
+	// TEC Power
+	IUFillNumber(&TECN[1], "TEC_POWER", "Output (%)", "%5.2f", 0, 100, 0, 0);
+	IUFillNumberVector(&TECPowerNP, &TECN[1], 1, getDeviceName(), "CCD_TEC_POWER", "TEC",
 			   MAIN_CONTROL_TAB, IP_RO, 60, IPS_IDLE);
 
+	// TEC Power Limit
+	IUFillNumber(&TECN[2], "TEC_LIMIT", "Max Output (%)", "%5.2f", 0, 100, 0, TECLimit);
+	IUFillNumberVector(&TECLimitNP, &TECN[2], 1, getDeviceName(), "CCD_TEC_LIMIT", "TEC",
+			   MAIN_CONTROL_TAB, IP_RW, 60, IPS_IDLE);
 
 	PrimaryCCD.setMinMaxStep("CCD_EXPOSURE", "CCD_EXPOSURE_VALUE", MINIMUM_CCD_EXPOSURE, 3600, 1, false);
 
@@ -155,10 +151,10 @@ void QHY9::ISGetProperties(const char *dev)
 
 	if (isConnected()) {
 		defineSwitch(&ReadOutSP);
-		defineNumber(&GainOffsetSetNV);
-		defineNumber(&TemperatureSetNV);
-		defineNumber(&TempPWMSetNV);
-		defineNumber(&TemperatureGetNV);
+		defineNumber(&GainNP);
+		defineNumber(&OffsetNP);
+		defineNumber(&TECLimitNP);
+		defineNumber(&TECPowerNP);
 		defineText(FilterNameTP);
 	}
 }
@@ -170,11 +166,10 @@ bool QHY9::updateProperties()
 	if (isConnected()) {
 		defineSwitch(&ReadOutSP);
 
-		defineNumber(&GainOffsetSetNV);
-
-		defineNumber(&TemperatureSetNV);
-		defineNumber(&TempPWMSetNV);
-		defineNumber(&TemperatureGetNV);
+		defineNumber(&GainNP);
+		defineNumber(&OffsetNP);
+		defineNumber(&TECLimitNP);
+		defineNumber(&TECPowerNP);
 
 		defineNumber(&FilterSlotNP);
 		GetFilterNames(FILTER_TAB);
@@ -185,10 +180,10 @@ bool QHY9::updateProperties()
 		pollTimer = SetTimer(POLLMS);
 	} else {
 		deleteProperty(ReadOutSP.name);
-		deleteProperty(GainOffsetSetNV.name);
-		deleteProperty(TemperatureSetNV.name);
-		deleteProperty(TempPWMSetNV.name);
-		deleteProperty(TemperatureGetNV.name);
+		deleteProperty(GainNP.name);
+		deleteProperty(OffsetNP.name);
+		deleteProperty(TECPowerNP.name);
+		deleteProperty(TECLimitNP.name);
 
 		RemoveTimer(pollTimer);
 	}
@@ -225,7 +220,7 @@ bool QHY9::Connect()
 			libusb_ref_device(dev);
 			libusb_free_device_list(devices, 1);
 
-			return true;
+			return !libusb_open(dev, &usb_handle);
 		}
 	}
 
@@ -253,7 +248,7 @@ double QHY9::calcTimeLeft()
 	double timeLeft;
 
 	gettimeofday(&now, NULL);
-	timeLeft = ExposureRequest - tv_diff(&now, &exposure_start) / 1000.0;
+	timeLeft = (ExposureRequest - tv_diff(&now, &exposure_start)) / 1000.0;
 
 	return (timeLeft > 0.0) ? timeLeft : 0.0;
 }
@@ -276,34 +271,37 @@ void QHY9::TimerHit()
 				pollTimer = SetTimer(50);
 			} else {
 				PrimaryCCD.setExposureLeft(0);
-				InExposure = false;
 				GrabExposure();
 
 				pollTimer = SetTimer(POLLMS);
 			}
+
+			return;
 		}
-	} else {
-		pollTimer = SetTimer(POLLMS);
 	}
 
+
+	pollTimer = SetTimer(POLLMS);
 	updateTemperature();
 }
 
 int QHY9::SetTemperature(double temperature)
 {
 	TemperatureTarget = temperature;
-	return 0;
+	return 1;			     // success
 }
 
 bool QHY9::StartExposure(float duration)
 {
 	CCDChip::CCD_FRAME type;
 
+	if (InExposure)
+		return false;
+
 	if (duration < MINIMUM_CCD_EXPOSURE)
 		duration = MINIMUM_CCD_EXPOSURE;
 
 	type = PrimaryCCD.getFrameType();
-
 	if (type == CCDChip::BIAS_FRAME)
 		duration = MINIMUM_CCD_EXPOSURE;
 
@@ -313,13 +311,15 @@ bool QHY9::StartExposure(float duration)
 	PrimaryCCD.setExposureDuration(duration);
 
 	setCameraRegisters();
-	usleep(100000);
+	usleep(200 * 1000);
 
 	if (type == CCDChip::DARK_FRAME || type == CCDChip::BIAS_FRAME) {
-		//fprintf(stderr, "SHOOTING A DARK, CLOSING SHUTTER\n");
+		fprintf(stderr, "SHOOTING A DARK, CLOSING SHUTTER\n");
 		setShutter(SHUTTER_CLOSE);
 		usleep(500*1000);		     // shutter speed is 1/10 to 1/2 sec
 	}
+
+
 
 	InExposure = true;
 	gettimeofday(&exposure_start, NULL);
@@ -331,7 +331,7 @@ bool QHY9::StartExposure(float duration)
 
 bool QHY9::AbortExposure()
 {
-	if (!InExposure || sim) {
+	if (!InExposure) {
 		InExposure = false;
 		return true;
 	}
@@ -349,8 +349,12 @@ bool QHY9::AbortExposure()
 
 bool QHY9::UpdateCCDFrame(int x, int y, int w, int h)
 {
+	if (x < 0 || w <= 0 || x + w > QHY9_SENSOR_WIDTH ||
+	    y < 0 || h <= 0 || y + h > QHY9_SENSOR_HEIGHT)
+		return false;
 
-	return false;
+	PrimaryCCD.setFrame(x, y, w, h);
+	return true;
 }
 
 bool QHY9::UpdateCCDBin(int hbin, int vbin)
@@ -472,10 +476,7 @@ int QHY9::getDC201Interrupt()
 	if (!usb_handle)
 		return 0;
 
-	/* FIXME: A bulk transfer works, an interrupt_transfer doesn't ?!?! */
 	libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_READ_EP, buffer, 4, &transferred, 0);
-
-	//fprintf(stderr, "inte: %02x %02x %02x %02x\n", buffer[0], buffer[1], buffer[2], buffer[3]);
 
 	return ((int16_t) (buffer[1] * 256 + buffer[2]));
 }
@@ -493,7 +494,6 @@ void QHY9::setDC201Interrupt(uint8_t PWM, uint8_t FAN)
 	if (!usb_handle)
 		return;
 
-	/* FIXME: A bulk transfer works, an interrupt_transfer doesn't ?!?! */
 	libusb_bulk_transfer(usb_handle, QHY9_INTERRUPT_WRITE_EP, buffer, 3, &transferred, 0);
 }
 
@@ -502,18 +502,15 @@ void QHY9::setCameraRegisters()
 	uint8_t REG[64];
 	unsigned long T;
 	uint8_t time_L, time_M, time_H;
-	int binx;
+	int bin;
 
 	/* Compute frame sizes, skips, number of patches, etc according to binning. wth is a "patch" ? */
-	binx = PrimaryCCD.getBinX();
-	switch (binx) {
-
+	bin = PrimaryCCD.getBinX();
+	switch (bin) {
 	case 0:
 	case 1:
 		HBIN = 1;
 		VBIN = 1;
-		//LineSize = PrimaryCCD.getSubW();
-		//VerticalSize = PrimaryCCD.getSubH();
 		LineSize = 3584;
 		VerticalSize = 2574;
 		p_size = 3584 * 2; // must be multiple of 512
@@ -522,8 +519,6 @@ void QHY9::setCameraRegisters()
 	case 2:
 		HBIN = 2;
 		VBIN = 2;
-		//LineSize = PrimaryCCD.getSubW() / binx;
-		//VerticalSize = PrimaryCCD.getSubH() / binx;
 		LineSize = 1792;
 		VerticalSize = 1287;
 		p_size = 3584 * 2; // multiple of 512
@@ -532,8 +527,6 @@ void QHY9::setCameraRegisters()
 	case 3:
 		HBIN = 3;
 		VBIN = 3;
-		//LineSize = PrimaryCCD.getSubW() / binx;
-		//VerticalSize = PrimaryCCD.getSubH() / binx;
 		LineSize = 1194;               // was 1196, bad
 		VerticalSize = 858;
 		p_size = 1024;
@@ -542,8 +535,6 @@ void QHY9::setCameraRegisters()
 	case 4:
 		HBIN = 4;
 		VBIN = 4;
-		//LineSize = PrimaryCCD.getSubW() / binx;
-		//VerticalSize = PrimaryCCD.getSubH() / binx;
 		LineSize = 896;
 		VerticalSize = 644;
 		p_size = 1024;
@@ -553,9 +544,6 @@ void QHY9::setCameraRegisters()
 	SKIP_TOP = PrimaryCCD.getSubY() / PrimaryCCD.getBinY();
 	SKIP_BOTTOM = VerticalSize - SKIP_TOP - PrimaryCCD.getSubH() / PrimaryCCD.getBinY();
 	VerticalSize = VerticalSize - SKIP_TOP - SKIP_BOTTOM;
-
-	fprintf(stderr, "SKIP_TOP %d, SKIP_BOTTOM %d, VerticalSize %d\n",
-		SKIP_TOP, SKIP_BOTTOM, VerticalSize);
 
 	T = (LineSize * VerticalSize + TopSkipPix) * 2;
 
@@ -584,12 +572,13 @@ void QHY9::setCameraRegisters()
 	/* fill in register buffer */
 	memset(REG, 0, 64);
 
+	Exptime = (unsigned long) floor(ExposureRequest);
 	time_L = Exptime % 256;
 	time_M = (Exptime - time_L)/256;
 	time_H = (Exptime - time_L - time_M * 256) / 65536;
 
-	REG[0]=Gain;
-	REG[1]=Offset;
+	REG[0]=camgain;
+	REG[1]=camoffset;
 
 	REG[2]=time_H;
 	REG[3]=time_M;
@@ -640,13 +629,13 @@ void QHY9::setCameraRegisters()
 	REG[47]=MSB(TopSkipPix);
 	REG[48]=LSB(TopSkipPix);
 
-	REG[51]=MechanicalShutterMode ;
-	REG[52]=DownloadCloseTEC ;
+	REG[51]=MechanicalShutterMode;
+	REG[52]=DownloadCloseTEC;
 
 	REG[53]=(WindowHeater&~0xf0)*16+(MotorHeating&~0xf0);
 
-	REG[58]=SDRAM_MAXSIZE ;
-	REG[63]=Trig ;
+	REG[58]=SDRAM_MAXSIZE;
+	REG[63]=Trig;
 
 	int i;
 	fprintf(stderr, "Sending REGS...\n");
@@ -668,84 +657,37 @@ void QHY9::setCameraRegisters()
 
 bool QHY9::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
 {
-#if 0
-	double v;
-	INumber *np;
-
-	fprintf(stderr, "ISNEWNUMBER dev %s, device %s, name %s\n\n", dev, getDeviceName(), name);
-	if (dev && !strcmp(dev, getDeviceName())) {
-		if (!strcmp(name, "CCD_TEMPERATURE")) {
-			if (n < 1) return false;
-
-			v = clamp_double(values[0], -50, 50);
-
-			TemperatureTarget = v;
-			TemperatureN[0].value = v;
-			TemperatureSetNV->s = IPS_OK;
-			IDSetNumber(TemperatureSetNV, NULL);
-
-			return true;
-		}
-
-		if (!strcmp(name, "CCD_TEC_PWM_LIMIT")) {
-			if (n < 1) return false;
-
-			v = clamp_double(values[0], 0, 90);
-
-			TEC_PWMLimit = v;
-			TemperatureN[1].value = v;
-			TempPWMSetNV->s = IPS_OK;
-			IDSetNumber(TempPWMSetNV, NULL);
-
-			return true;
-		}
-
-		if (!strcmp(name, FilterSlotNP.name)) {
-			TargetFilter = values[0];
-
-			np = IUFindNumber(&FilterSlotNP, names[0]);
-
-			if (!np) {
-				FilterSlotNP.s = IPS_ALERT;
-				IDSetNumber(&FilterSlotNP, "Unknown error. %s is not a member of %s property.", names[0], name);
-				return false;
-			}
-
-			if (TargetFilter < MinFilter || TargetFilter > MaxFilter) {
-				FilterSlotNP.s = IPS_ALERT;
-				IDSetNumber(&FilterSlotNP, "Error: valid range of filter is from %d to %d", MinFilter, MaxFilter);
-				return false;
-			}
-
-			IUUpdateNumber(&FilterSlotNP, values, names, n);
-
-			SelectFilter(TargetFilter);
-
-			FilterSlotN[0].value = TargetFilter;
-			FilterSlotNP.s = IPS_OK;
-			IDSetNumber(&FilterSlotNP, "Setting current filter to slot %d", TargetFilter);
-
-			return true;
-		}
-
-		if (!strcmp(name, GainOffsetSetNV->name)) {
-			if (n < 2)
-				return false;
-
-			Gain   = GainOffsetN[0].value = clamp_int(values[0], 0, 255);
-			Offset = GainOffsetN[1].value = clamp_int(values[1], 0, 255);
-
-			GainOffsetSetNV->s = IPS_OK;
-			IDSetNumber(GainOffsetSetNV, NULL);
-
-			return true;
-		}
-	}
-#endif
-
 	if (dev && !strcmp(dev, getDeviceName())) {
 		if (!strcmp(name, FilterSlotNP.name)) {
 			processFilterSlot(dev, values, names);
+			return true;
+		}
+
+		if (!strcmp(name, GainNP.name)) {
+			if (n < 1) return false;
+
+			camgain = GainN[0].value = clamp_int(values[0], 0, 255);
+			GainNP.s = IPS_OK;
+			IDSetNumber(&GainNP, NULL);
+			return true;
+		}
+
+		if (!strcmp(name, OffsetNP.name)) {
+			if (n < 1) return false;
+
+			camoffset = OffsetN[0].value = clamp_int(values[0], 0, 255);
+			OffsetNP.s = IPS_OK;
+			IDSetNumber(&OffsetNP, NULL);
+			return true;
+		}
+
+		if (!strcmp(name, TECLimitNP.name)) {
+			if (n < 1) return false;
+
+			TECN[1].value = clamp_int(values[0], 0, 100);
+			TECLimitNP.s = IPS_OK;
+			IDSetNumber(&TECLimitNP, NULL);
+
 			return true;
 		}
 	}
@@ -771,8 +713,6 @@ bool QHY9::ISNewSwitch(const char *dev, const char *name, ISState *states, char 
 
                         ReadOutSP.s = IPS_OK;
 			IDSetSwitch(&ReadOutSP, NULL);
-
-			IDMessage(dev, "readout speed %d", DownloadSpeed);
 
 			return true;
 		}
@@ -800,8 +740,10 @@ bool QHY9::saveConfigItems(FILE *fp)
 	IUSaveConfigNumber(fp, &FilterSlotNP);
 	IUSaveConfigText(fp, FilterNameTP);
 
-	IUSaveConfigNumber(fp, &GainOffsetSetNV);
+	IUSaveConfigNumber(fp, &GainNP);
+	IUSaveConfigNumber(fp, &OffsetNP);
 	IUSaveConfigSwitch(fp, &ReadOutSP);
+	IUSaveConfigNumber(fp, &TECLimitNP);
 
 	return true;
 }
@@ -902,59 +844,37 @@ bool QHY9::GetFilterNames(const char *groupName)
 
 void QHY9::updateTemperature()
 {
-	double kp = 1.4, ki = 0.5;	     // PI gains
+	//double kp = 1.6, ki = 0.5, kd = 0.0;	     // PID gains
+	double kp = 1.6, ki = 0.2, kd = 0.0;
 	double pwm;
 	static double error = 0.0, integral = 0.0, deriv = 0.0;
+	static int alternate = 0;
 
-	if (true) {
-		// this would be steady state if full power provides -100C delta
-		double steady = T_env - 100.0 * (TEC_PWM / 256.0);
+	alternate = !alternate;
+	if (alternate) {
+		int16_t voltage = getDC201Interrupt();
+		Temperature = mv_to_degrees(1.024 * voltage);
+		IDSetNumber(&TemperatureNP, NULL);
 
-		if (Temperature < steady)
-			Temperature += fabs((steady - Temperature)) / 10;
-		else
-			Temperature -= fabs((steady - Temperature)) / 10;
+		deriv = (TemperatureTarget - Temperature) / -60.0 - error;
+		error = (TemperatureTarget - Temperature) / -60.0;
 
+		// anti-windup
+		integral = clamp_double(integral + error, -3.0, 3.0);
+
+		pwm = clamp_double(255.0 * (kp * error + ki * integral + kd * deriv), 0.0, 255.0);
+
+		fprintf(stderr, "temp %.6f, target %.6f, PWM %.f, err %.6f, int %.6f, der %.6f\n",
+			Temperature, TemperatureTarget, pwm, error, integral, deriv);
+
+		TECValue = clamp_int((int) pwm, 0, (int) (TECLimit / 100.0 * 255.0));
+		TECPercent = TECValue * 100.0 / 255.0;
+		IDSetNumber(&TECPowerNP, NULL);
 	} else {
-		Temperature = mv_to_degrees(1.024 * getDC201Interrupt());
+
+		// getting and setting DC201 back-to-back seems to lock the camera
+		setDC201Interrupt(TECValue, 255);
 	}
-
-	deriv = (TemperatureTarget - Temperature) / -100.0 - error;
-	error = (TemperatureTarget - Temperature) / -100.0;
-
-	// anti-windup
-	integral = clamp_double(integral + error, -2.0, 2.0);
-
-	pwm = clamp_double(255.0 * (kp * error + ki * integral), 0.0, 255.0);
-
-	fprintf(stderr, "temp %.6f, target %.6f, PWM %.f, err %.6f, int %.6f, der %.6f\n",
-		Temperature, TemperatureTarget, pwm, error, integral, deriv);
-
-#if 0
-	if (Temperature > TemperatureTarget + 5)
-		TEC_PWM += 5;
-	else if (Temperature < TemperatureTarget - 5)
-		TEC_PWM -= 5;
-	else if (Temperature > TemperatureTarget + 0.7)
-		TEC_PWM += 1;
-	else if (Temperature < TemperatureTarget - 0.7)
-		TEC_PWM -= 1;
-
-#endif
-
-	TEC_PWM = clamp_int((int) pwm, 0, TEC_PWMLimit * 255 / 100);
-
-	setDC201Interrupt(TEC_PWM, 255);
-
-	TemperatureN[2].value = Temperature;
-	TemperatureN[3].value = TEC_PWM * 100 / 256;
-
-	TemperatureGetNV.s = IPS_OK;
-
-	//fprintf(stderr, "volt %.2f, temp %.2f, target %.2f, PWM %d\n",
-	//	voltage, Temperature, TemperatureTarget, TEC_PWM);
-
-	IDSetNumber(&TemperatureGetNV, NULL);
 }
 
 
@@ -984,7 +904,6 @@ int QHY9::bulk_transfer_read(int ep, unsigned char *data, int psize, int pnum, i
 
 void QHY9::addFITSKeywords(fitsfile *fptr, CCDChip *chip)
 {
-#if 0
 	static char obsdata[128];
 	float exposure;
 	struct tm *dobs;
@@ -1014,10 +933,10 @@ void QHY9::addFITSKeywords(fitsfile *fptr, CCDChip *chip)
 	fits_write_key(fptr, TBYTE, "CCDBIN2", &VBIN, "CCD BIN Y", &status);
 
 	/* Gain */
-	fits_write_key(fptr, TBYTE, "QHYGAIN", &Gain, "CCD Gain, 0..255", &status);
+	fits_write_key(fptr, TBYTE, "QHYGAIN", &camgain, "CCD Gain, 0..255", &status);
 
 	/* Offset */
-	fits_write_key(fptr, TBYTE, "QHYBIAS", &Offset, "CCD Offset", &status);
+	fits_write_key(fptr, TBYTE, "QHYBIAS", &camoffset, "CCD Offset", &status);
 
 	/* Readout speed */
 	fits_write_key(fptr, TBYTE, "QHYSPEED", &DownloadSpeed, "CCD readout speed", &status);
@@ -1027,17 +946,12 @@ void QHY9::addFITSKeywords(fitsfile *fptr, CCDChip *chip)
 
 
 	/* CCD Temperature */
-	if (HasTemperatureControl) {
-		fits_write_key(fptr, TDOUBLE, "CCDTEMP", &Temperature, "CCD temperature, degC", &status);
-		fits_write_key(fptr, TDOUBLE, "CCDTSET", &TemperatureTarget, "CCD set temperature, degC", &status);
-	}
+	fits_write_key(fptr, TDOUBLE, "CCDTEMP", &Temperature, "CCD temperature, degC", &status);
+	fits_write_key(fptr, TDOUBLE, "CCDTSET", &TemperatureTarget, "CCD set temperature, degC", &status);
 
 	/* Filters */
-	if (HasFilterWheel) {
-		void *fname = (void *) filterDesignation[CurrentFilter - 1].c_str();
+	void *filtername = FilterNameT[CurrentFilter - 1].text;
 
-		fits_write_key(fptr, TSTRING, "FILTER", fname, "Filter name", &status);
-		fits_write_key(fptr, TINT, "FLT-SLOT", &CurrentFilter, "Filter slot", &status);
-	}
-#endif
+	fits_write_key(fptr, TSTRING, "FILTER", filtername, "Filter name", &status);
+	fits_write_key(fptr, TINT, "FLT-SLOT", &CurrentFilter, "Filter slot", &status);
 }

@@ -95,36 +95,46 @@ protected:
 
 	int pollTimer;
 
-	bool sim;			         /* simulation mode */
-
 	libusb_device_handle *usb_handle;	 /* USB device handle */
 
 	struct timeval exposure_start;	 /* used by the timer to call ExposureComplete() */
 	double ExposureRequest;
 	double calcTimeLeft();
 
-	/* Temperature control */
-	double  TemperatureTarget;		 /* temperature setpoint in degC */
-	double  Temperature;		         /* current temperature in degC */
-	double  T_env;
-	int     TEC_PWMLimit;		         /* 0..100, TEC power limit */
-	int     TEC_PWM;		         /* current TEC power */
-	INumber TemperatureN[4];
+	// Temperature control
+	double TemperatureTarget;		 /* temperature setpoint in degC */
 
-	INumberVectorProperty TemperatureSetNV;  /* temp setpoint */
-	INumberVectorProperty TempPWMSetNV;      /* PWM limit */
-	INumberVectorProperty TemperatureGetNV;  /* R/O, current temp and PWM */
+	unsigned char camgain;
+	unsigned char camoffset;
 
-	INumber GainOffsetN[2];
-	INumberVectorProperty GainOffsetSetNV;         /* gain & offset*/
+#define Temperature TemperatureN[0].value
+
+#define TECValue   TECN[0].value
+#define TECPercent TECN[1].value
+#define TECLimit   TECN[2].value
+
+	// TEC power value and limit
+	INumber TECN[3];
+	INumberVectorProperty TECPowerNP;
+	INumberVectorProperty TECLimitNP;
+
+#define Gain GainN[0].value
+	// gain
+	INumber GainN[1];
+	INumberVectorProperty GainNP;
+
+#define Offset OffsetN[0].value
+	// offset
+	INumber OffsetN[1];
+	INumberVectorProperty OffsetNP;
 
 	// readout speed
 	ISwitch ReadOutS[3];
 	ISwitchVectorProperty ReadOutSP;
 
-	/* QHY Camera Settings */
-	unsigned char Gain;
-	unsigned char Offset;
+	// Camera Settings
+	//unsigned char Gain;
+	//unsigned char Offset;
 	unsigned long Exptime;
 	unsigned char HBIN;
 	unsigned char VBIN;
