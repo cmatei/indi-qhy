@@ -1,25 +1,17 @@
 
-Temporary home for INDI (http://indilib.org) drivers for QHY astronomical cameras.
+20150415: if you have a working version of this driver don't update just yet.
 
-
-QHY9 Current Status
--------------------
+Current Status
+--------------
 
 What works:
 
 - getting images at bin 1x1, 2x2, 3x3, 4x4 
-- temperature control. The regulator itself is crappy (oscillates), but will 
-  do for +/- 0.5 degrees.
+- temperature control. 
 - CFW control
 - controlling the shutter to shoot darks
 - readout speed, gain, offset etc are configurable
-- subframes [*]
+- subframes
 
-What doesn't work:
-
-* I hopefully leave something uninitialized, somewhere after the subframes commit.
-  Last nights at the scope I had an issue, namely that first exposure would hang and
-  require a camera reset. Once working, it was reliable.
-  I'm hoping it's a software issue, rather than broken hw.
   
 
