@@ -68,18 +68,7 @@ QHY9::QHY9()
 {
 	usb_handle = NULL;
 
-	CCDCapability cap = {
-		.hasGuideHead = false,
-		.hasST4Port = false,
-		.hasShutter = true,
-		.hasCooler = true,
-		.canBin = true,
-		.canSubFrame = true,
-		.canAbort = true,
-		.hasBayer = false,
-	};
-
-	SetCCDCapability(&cap);
+	SetCCDCapability(CCD_HAS_SHUTTER | CCD_HAS_COOLER | CCD_CAN_ABORT);
 
 	TemperatureTarget = 50;
 	Temperature = 0;
@@ -140,7 +129,7 @@ bool QHY9::initProperties()
 
 	addAuxControls();
 
-	setInterfaceDescriptor(getInterfaceDescriptor() | FILTER_INTERFACE);
+	setDriverInterface(getDriverInterface() | FILTER_INTERFACE);
 
 	return true;
 }
